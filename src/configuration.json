@@ -1,0 +1,79 @@
+{
+    "General": {
+        "debug": true,
+        "load_params": false,
+        "load_buffer": false
+    },
+    "Environment": {
+        "state_dim": 8,
+        "action_dim": 2,
+        "max_len": 10,
+        "reward_scale": 1.0,
+        "a_conversions": [90, 180],
+        "time_increment": 60,
+        "agents": [0]
+    },
+    "Actor Architecture": {
+        "architecture_used": "MLP",
+        "v_net_architecture": "MLP",
+        "q_net_architecture": "MLP",
+        "q_net_mid_dim": 64,
+        "architectures_available": [
+            {
+                "name": "Transformer",
+                "obs_has_actions": true,
+                "d_model": 512,
+                "max_len": 10,
+                "nhead": 8,
+                "num_encoder_layers": 1,
+                "num_decoder_layers": 1,
+                "dim_feedforward": 2048,
+                "embed_dropout": 0.1,
+                "pos_dropout": 0.1,
+                "transformer_dropout": 0.1,
+                "position_encoding": "segment",
+                "activation": "relu",
+                "batch_first": true,
+                "kaiming_init": false
+            },
+            {
+                "name": "TransformerEncoder",
+                "obs_has_actions": false,
+                "d_model": 512,
+                "max_len": 10,
+                "nhead": 8,
+                "num_encoder_layers": 1,
+                "dim_feedforward": 2048,
+                "embed_dropout": 0.1,
+                "pos_dropout": 0.1,
+                "encoder_dropout": 0.1,
+                "position_encoding": "segment",
+                "activation": "relu",
+                "batch_first": true,
+                "kaiming_init": false
+            },
+            {
+                "name": "MLP",
+                "obs_has_actions": false,
+                "max_len": 10,
+                "hidden_layers": [128],
+                "dropout": 0.1
+            }
+        ]
+    },
+    "Proximal Policy Optimization": {
+        "total_steps": 3e4,
+        "horizon": 200,
+        "minibatch_size": 32,
+        "optim_steps": 10,
+        "max_grad_norm": 1.0,
+        "clip_epsilon": 0.2,
+        "discount": 0.99,
+        "gae_lambda": 0.95,
+        "v_loss_coef": 1.0,
+        "entropy_coef": 0.01,
+        "lr": 0.0003,
+        "lr_schedule": true,
+        "lr_min": 0.0
+    }
+}
