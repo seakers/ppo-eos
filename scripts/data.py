@@ -98,7 +98,12 @@ class DataCollectorFromEarthGym():
                 _next_terminated.append(terminated)
                 _next_truncated.append(truncated)
 
-                self._step_count += 1
+                if self._step_count >= self._conf.trajectory_len:
+                    self._step_count = 0
+                    self._traj_id += 1
+                else:
+                    self._step_count += 1
+
                 self._current_step += 1
 
             return TensorDict({
