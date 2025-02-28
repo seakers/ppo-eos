@@ -78,7 +78,10 @@ if __name__ == "__main__":
         )
 
         # Start the SAC algorithm
-        ppo.learn(conf.total_steps)
+        ppo.learn(conf.learn_steps)
+
+        # Test the model
+        ppo.test(conf.test_steps)
     
     except Exception as e:
         print(f"Error: {e}")

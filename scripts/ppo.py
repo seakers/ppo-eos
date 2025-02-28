@@ -143,9 +143,6 @@ class ProximalPolicyOptimization():
         eval_str = ""
         self._actor.train()
         for i, tensordict_data in enumerate(self._collector):
-            print(tensordict_data["step_count"])
-            print(tensordict_data["next", "step_count"])
-            print(tensordict_data["collector", "traj_ids"])
             # We now have a batch of data in tensordict_data
             for _ in range(self._optim_steps):
                 # We'll need an "advantage" signal to make PPO work
@@ -177,19 +174,19 @@ class ProximalPolicyOptimization():
             self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
             lr_str = f"Policy lr: {self._logs["lr"][-1]:.6f}"
 
-            if i % 10 == 0 and False:
-                rewards, step_count = self.test_one_run()
-                self._actor.train()
-                self._logs["eval reward (sum)"].append(rewards)
-                self._logs["eval step_count"].append(step_count)
+            # if i % 10 == 0 and False:
+            #     rewards, step_count = self.test_one_run()
+            #     self._actor.train()
+            #     self._logs["eval reward (sum)"].append(rewards)
+            #     self._logs["eval step_count"].append(step_count)
 
-                self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
-                self._logs["step_count"].append(tensordict_data["step_count"].max().item())
-                self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
-                eval_str = (
-                    f"Eval cumulative reward: {self._logs["eval reward (sum)"][-1]:4f}, "
-                    f"Eval step count: {self._logs["eval step_count"][-1]}, "
-                )
+            #     self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
+            #     self._logs["step_count"].append(tensordict_data["step_count"].max().item())
+            #     self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
+            #     eval_str = (
+            #         f"Eval cumulative reward: {self._logs["eval reward (sum)"][-1]:4f}, "
+            #         f"Eval step count: {self._logs["eval step_count"][-1]}, "
+            #     )
             
             # Update the progress bar
             self._pbar.update(tensordict_data.numel())
@@ -227,48 +224,4 @@ class ProximalPolicyOptimization():
         """
         Run the agent in the environment for a specified number of timesteps.
         """
-        env = env if env is not None else self._test_env
-        total_rewards = []
-        total_steps = []
-        observation, _ = env.reset()
-        rewards = 0
-        step_count = 0
-
-        self._actor.eval()
-        with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-            for _ in range(int(n_steps)):
-                loc, scale, action, log_prob = self._actor(torch.tensor(observation, dtype=torch.float, device=self._device))
-                observation, reward, terminated, truncated, _ = env.step(action.detach().cpu().numpy())
-                rewards += reward
-                step_count += 1
-                if terminated or truncated:
-                    observation, _ = env.reset()
-                    total_rewards.append(rewards)
-                    total_steps.append(step_count)
-                    rewards = 0
-                    step_count = 0
-
-        print(f"Average rewards per trajectory: {sum(total_rewards)/len(total_rewards):.4f}")
-        print(f"Average number of steps per trajectory: {sum(total_steps)/len(total_steps):.2f}")
-
-        return total_rewards, total_steps
-    
-    def test_one_run(self):
-        """
-        Run the agent in the environment for a single trajectory.
-        """
-        observation, _ = self._test_env.reset()
-        rewards = 0
-        step_count = 0
-
-        self._actor.eval()
-        with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-            while True:
-                loc, scale, action, log_prob = self._actor(torch.tensor(observation, dtype=torch.float, device=self._device))
-                observation, reward, terminated, truncated, _ = self._test_env.step(action.detach().cpu().numpy())
-                rewards += reward
-                step_count += 1
-                if terminated or truncated or step_count >= 10000:
-                    break
-
-        return rewards, step_count
+        self._collector.test(n_steps=n_steps)

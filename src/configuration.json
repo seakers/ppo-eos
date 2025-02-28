@@ -62,8 +62,10 @@
         ]
     },
     "Proximal Policy Optimization": {
-        "total_steps": 3e4,
-        "horizon": 200,
+        "learn_steps": 1e5,
+        "test_steps": 3e3,
+        "trajectory_len": 100,
+        "horizon": 256,
         "minibatch_size": 32,
         "optim_steps": 10,
         "max_grad_norm": 1.0,

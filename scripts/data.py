@@ -12,7 +12,7 @@ class DataCollectorFromEarthGym():
             self,
             client: any,
             conf: object,
-            policy: any,
+            policy: ProbabilisticActor,
             batch_steps: int,
             total_steps: int,
             device: torch.device = torch.device("cpu")
@@ -30,6 +30,8 @@ class DataCollectorFromEarthGym():
         self._traj_id = 0
         self._step_count = 0
 
+        self.initialize_env()
+
     def __iter__(self):
         """
         Returns the iterator object.
@@ -40,9 +42,6 @@ class DataCollectorFromEarthGym():
         """
         Collects data from the environment using the policy.
         """
-        if self._current_step == 0:
-            self.initialize_env()
-
         # Fields from main td
         _action = []
         _done = []
@@ -204,6 +203,27 @@ class DataCollectorFromEarthGym():
             next_observation = np.concatenate([self._current_observation, np.zeros(self._conf.max_len * self._conf.state_dim - len(self._current_observation))], axis=0)
 
             return next_observation, r, False
+        
+    def test(self, n_steps: int=10000):
+        """
+        Test the environment.
+        """
+        total_rewards = []
+
+        self._policy.eval()
+        for i in range(int(n_steps)):
+            with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
+                loc, scale, action, log_prob = self._policy(self._states.to(self._device))
+                next_observation, reward, done = self.move_once(action.reshape(-1))
+
+            if done:
+                n_steps = i + 1
+                total_rewards.append(reward.detach().item())
+                break
+
+            total_rewards.append(reward.detach().item())
+
+        print(f"Average rewards per trajectory: {sum(total_rewards)/n_steps:.4f}")
         
     def normalize_state(self, state: dict) -> list:
         """
