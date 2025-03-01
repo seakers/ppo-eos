@@ -30,6 +30,9 @@ class DataCollectorFromEarthGym():
         self._traj_id = 0
         self._step_count = 0
 
+        self._conf.trajectory_len = float(self._conf.trajectory_len)
+
+        # Warm-up the agent in the environment
         self.initialize_env()
 
     def __iter__(self):
@@ -46,7 +49,8 @@ class DataCollectorFromEarthGym():
         _action = []
         _done = []
         _loc = []
-        _observation = []
+        _policy_observation = []
+        _v_function_observation = []
         _sample_log_prob = []
         _scale = []
         _step_count = []
@@ -58,7 +62,8 @@ class DataCollectorFromEarthGym():
 
         # Fields from next td
         _next_done = []
-        _next_observation = []
+        _next_policy_observation = []
+        _next_v_function_observation = []
         _next_reward = []
         _next_step_count = []
         _next_terminated = []
@@ -67,19 +72,25 @@ class DataCollectorFromEarthGym():
         if self._current_step < self._total_steps:
             for _ in range(self._batch_steps):
                 with set_exploration_type(ExplorationType.RANDOM):
-                    loc, scale, action, log_prob = self._policy(self._states.to(self._device))
-                    next_observation, reward, done = self.move_once(action.reshape(-1))
+                    observation, _ = self.prettify_observation(self._states, self._actions)
+                    loc, scale, action, log_prob = self._policy(observation)
+                    curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action.reshape(-1))
 
                 if done:
                     raise StopIteration
-
-                terminated = truncated = done
+                
+                if self._step_count >= self._conf.trajectory_len:
+                    terminated = truncated = True
+                else:
+                    terminated = truncated = False
 
                 # Fields from main td
                 _action.append(action)
                 _done.append(False)
                 _loc.append(loc)
-                _observation.append(self._current_observation.astype(np.float32))
+                _policy_observation.append(curr_policy_obs)
+                _v_function_observation.append(curr_v_function_obs)
+                # _observation.append(self._current_observation.astype(np.float32))
                 _sample_log_prob.append(log_prob)
                 _scale.append(scale)
                 _step_count.append(self._step_count)
@@ -91,7 +102,9 @@ class DataCollectorFromEarthGym():
 
                 # Fields from next td
                 _next_done.append(terminated or truncated)
-                _next_observation.append(next_observation.astype(np.float32))
+                _next_policy_observation.append(next_policy_obs)
+                _next_v_function_observation.append(next_v_function_obs)
+                # _next_observation.append(next_observation.astype(np.float32))
                 _next_reward.append(np.float32(reward))
                 _next_step_count.append(self._step_count + 1)
                 _next_terminated.append(terminated)
@@ -109,7 +122,8 @@ class DataCollectorFromEarthGym():
                 "action": torch.stack(_action, dim=0).clone().detach().to(self._device),
                 "done": torch.tensor(_done, device=self._device),
                 "loc": torch.stack(_loc, dim=0).clone().detach().to(self._device),
-                "observation": torch.as_tensor(np.array(_observation), device=self._device),  # if _observation is a list of numpy arrays
+                "policy_observation": torch.stack(_policy_observation, dim=0).clone().detach().to(self._device),
+                "v_function_observation": torch.stack(_v_function_observation, dim=0).clone().detach().to(self._device),
                 "sample_log_prob": torch.stack(_sample_log_prob, dim=0).clone().detach().to(self._device),
                 "scale": torch.stack(_scale, dim=0).clone().detach().to(self._device),
                 "step_count": torch.tensor(_step_count, device=self._device),
@@ -122,8 +136,9 @@ class DataCollectorFromEarthGym():
 
                 "next": TensorDict({
                     "done": torch.tensor(_next_done, device=self._device),
-                    "observation": torch.as_tensor(np.array(_next_observation), device=self._device),
-                    "reward": torch.tensor(_next_reward, device=self._device),
+                    "policy_observation": torch.stack(_next_policy_observation, dim=0).clone().detach().to(self._device),
+                    "v_function_observation": torch.stack(_next_v_function_observation, dim=0).clone().detach().to(self._device),
+                    "reward": torch.stack(_next_reward, dim=0).clone().detach().to(self._device),
                     "step_count": torch.tensor(_next_step_count, device=self._device),
                     "terminated": torch.tensor(_next_terminated, device=self._device),
                     "truncated": torch.tensor(_next_truncated, device=self._device),
@@ -134,7 +149,7 @@ class DataCollectorFromEarthGym():
     
     def initialize_env(self):
         """
-        Initialize the environment.
+        Initialize the environment. Make the agent do a dummy move to stabilize the observation state.
         """
         sending_data = {
             "agent_id": 0,
@@ -150,17 +165,29 @@ class DataCollectorFromEarthGym():
         vec_state = self.normalize_state(state)
 
         # Input tensor of 1 batch and 1 sequence of state_dim dimensional states
-        self._states = torch.FloatTensor(vec_state)
+        self._states = torch.FloatTensor([[vec_state]], device=self._device)
 
-        # Initialize the current observation
-        self._current_observation = self._states.clone().view(-1).detach().numpy()
-        self._current_observation = np.concatenate([self._current_observation, np.zeros(self._conf.max_len * self._conf.state_dim - len(self._current_observation))], axis=0)
+        # Input tensor of 1 batch and 1 sequence of action_dim dimensional actions
+        self._actions = torch.FloatTensor([[[0, 0]]], device=self._device)
+
+        # Make max_len dummy moves to have a long enough observation
+        self.n_dummy_moves(n=self._conf.max_len)
+
+    def n_dummy_moves(self, n: int):
+        """
+        Do n dummy moves to stabilize the environment.
+        """
+        for _ in range(n):
+            _, _, _, _, _, _ = self.move_once(torch.FloatTensor([0] * self._conf.action_dim))
 
     def move_once(self, action: torch.Tensor):
         """
         Do an environment step for the SAC algorithm.
         """
         with torch.no_grad():
+            # Get the current observation
+            curr_policy_obs, curr_v_function_obs = self.prettify_observation(self._states, self._actions)
+
             # --------------- Environment's job to provide info ---------------
             sending_data = {
                 "agent_id": 0,
@@ -188,21 +215,42 @@ class DataCollectorFromEarthGym():
             s_next = torch.FloatTensor(vec_state)
             # --------------- Environment's job to provide info ---------------
 
-            # Update the current obnservation
-            self._current_observation = self._states.clone().view(-1).detach().numpy()
-            self._current_observation = np.concatenate([self._current_observation, np.zeros(self._conf.max_len * self._conf.state_dim - len(self._current_observation))], axis=0)
-
             # Add it to the states
-            self._states = torch.cat([self._states, s_next.to(self._device)], dim=-1)
+            self._states = torch.cat([self._states, s_next.unsqueeze(0).unsqueeze(0).to(self._device)], dim=1)
+
+            # Add it to the actions
+            self._actions = torch.cat([self._actions, action.unsqueeze(0).unsqueeze(0)], dim=1)
 
             # Adjust the maximum length of the states and actions
-            self._states = self._states[-self._conf.max_len:]
+            self._states = self._states[:, -self._conf.max_len:, :]
+            self._actions = self._actions[:, -self._conf.max_len:, :]
 
-            # Next observation
-            next_observation = self._states.clone().view(-1).detach().numpy()
-            next_observation = np.concatenate([self._current_observation, np.zeros(self._conf.max_len * self._conf.state_dim - len(self._current_observation))], axis=0)
+            # Arrange the next observation as the model expects
+            next_policy_obs, next_v_function_obs = self.prettify_observation(self._states, self._actions)
 
-            return next_observation, r, False
+            return curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, r, False
+        
+    def prettify_observation(self, states: torch.Tensor, actions: torch.Tensor):
+        """
+        Arrange the next observation as the model expects.
+        """
+        # Clone the states and actions to avoid in-place operations
+        states = states.clone()
+        actions = actions.clone()
+
+        # Add or not the actions to the observation
+        if self._conf.obs_has_actions:
+            obs = torch.cat([states, actions], dim=-1)
+        else:
+            obs = states
+        
+        if not self._conf.policy_is_sequence:
+            policy_obs = obs.view(-1)
+        
+        if not self._conf.v_function_is_sequence:
+            v_function_obs = obs.view(-1)
+
+        return policy_obs, v_function_obs
         
     def test(self, n_steps: int=10000):
         """
@@ -213,8 +261,9 @@ class DataCollectorFromEarthGym():
         self._policy.eval()
         for i in range(int(n_steps)):
             with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-                loc, scale, action, log_prob = self._policy(self._states.to(self._device))
-                next_observation, reward, done = self.move_once(action.reshape(-1))
+                observation, _ = self.prettify_observation(self._states, self._actions)
+                loc, scale, action, log_prob = self._policy(observation)
+                curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action.reshape(-1))
 
             if done:
                 n_steps = i + 1
