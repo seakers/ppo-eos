@@ -71,7 +71,7 @@ class ProximalPolicyOptimization():
         ########################### PPO Core ###########################
         policy_td_module = TensorDictModule(
             module=self._policy,
-            in_keys=["observation"],
+            in_keys=["policy_observation"],
             out_keys=["loc", "scale"]
         )
 
@@ -88,7 +88,7 @@ class ProximalPolicyOptimization():
 
         self._value_module = ValueOperator(
             module=self._v_function,
-            in_keys=["observation"]
+            in_keys=["v_function_observation"]
         )
 
         self._advantage_module = GAE(
@@ -174,6 +174,7 @@ class ProximalPolicyOptimization():
             self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
             lr_str = f"Policy lr: {self._logs["lr"][-1]:.6f}"
 
+            ########################### Testing ###########################
             # if i % 10 == 0 and False:
             #     rewards, step_count = self.test_one_run()
             #     self._actor.train()
@@ -187,6 +188,7 @@ class ProximalPolicyOptimization():
             #         f"Eval cumulative reward: {self._logs["eval reward (sum)"][-1]:4f}, "
             #         f"Eval step count: {self._logs["eval step_count"][-1]}, "
             #     )
+            ########################### Testing ###########################
             
             # Update the progress bar
             self._pbar.update(tensordict_data.numel())
