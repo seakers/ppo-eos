@@ -90,7 +90,6 @@ class DataCollectorFromEarthGym():
                 _loc.append(loc)
                 _policy_observation.append(curr_policy_obs)
                 _v_function_observation.append(curr_v_function_obs)
-                # _observation.append(self._current_observation.astype(np.float32))
                 _sample_log_prob.append(log_prob)
                 _scale.append(scale)
                 _step_count.append(self._step_count)
@@ -104,8 +103,7 @@ class DataCollectorFromEarthGym():
                 _next_done.append(terminated or truncated)
                 _next_policy_observation.append(next_policy_obs)
                 _next_v_function_observation.append(next_v_function_obs)
-                # _next_observation.append(next_observation.astype(np.float32))
-                _next_reward.append(np.float32(reward))
+                _next_reward.append(reward)
                 _next_step_count.append(self._step_count + 1)
                 _next_terminated.append(terminated)
                 _next_truncated.append(truncated)
@@ -209,7 +207,7 @@ class DataCollectorFromEarthGym():
             vec_state = self.normalize_state(state)
 
             # Get the reward
-            r = torch.FloatTensor([reward * self._conf.reward_scale])
+            r = torch.tensor(reward * self._conf.reward_scale, dtype=torch.float32)
 
             # Get the next state
             s_next = torch.FloatTensor(vec_state)

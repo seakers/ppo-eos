@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch.optim
 
 from tqdm import tqdm
 from collections import defaultdict
@@ -18,8 +18,107 @@ from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
 
 from scripts.data import DataCollectorFromEarthGym
+from scripts.model import SimpleMLP
+from scripts.client import Client
+from scripts.utils import DataFromJSON
 
 class ProximalPolicyOptimization():
+    """
+    Proximal Policy Optimization (PPO) <https://arxiv.org/abs/1707.06347>`_ algorithm.
+    """
+    def __init__(
+            self,
+            client: Client,
+            conf: DataFromJSON,
+            save_path: str = "./",
+            device: torch.device = torch.device("cpu")
+        ):
+        ########################### Parameters ###########################
+        self._client = client
+        self._conf = conf
+        self._save_path = save_path
+        self._device = device
+        ########################### Parameters ###########################
+
+    def start(self):
+        """
+        Start the training process.
+        """
+        # Create the policy model
+        policy_net = self.build_policy_net()
+
+        # Create the value model
+        value_net = self.build_value_net()
+
+        # Create the PPO algorithm
+        ppo = PPOAlgorithm(
+            client=self._client,
+            conf=self._conf,
+            policy=policy_net,
+            v_function=value_net,
+            horizon=self._conf.horizon,
+            minibatch_size=self._conf.minibatch_size,
+            optim_steps=self._conf.optim_steps,
+            max_grad=self._conf.max_grad_norm,
+            epsilon=self._conf.clip_epsilon,
+            gamma=self._conf.discount,
+            lmbda=self._conf.gae_lambda,
+            c1=self._conf.v_loss_coef,
+            c2=self._conf.entropy_coef,
+            device=self._device
+        )
+
+        # Start the PPO algorithm
+        ppo.learn(self._conf.learn_steps)
+
+        # Test the model
+        ppo.test(self._conf.test_steps)
+
+    def build_policy_net(self):
+        """
+        Build the policy model.
+        """
+        # Add the configuration file properties of the architecture chosen
+        for i in range(len(self._conf.archs_available)):
+            if self._conf.archs_available[i]["name"] == self._conf.policy_arch:
+                policy_conf: defaultdict = self._conf.archs_available[i].copy()
+                break
+
+        print(f"Using {policy_conf.pop("name")} architecture for the policy.")
+
+        # Create the policy model
+        if self._conf.policy_arch == "SimpleMLP":
+            policy_conf["input_dim"] = self._conf.max_len * self._conf.state_dim
+            policy_conf["output_dim"] = self._conf.action_dim
+            policy_net = SimpleMLP(**policy_conf, device=self._device)
+        else:
+            raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
+
+        return policy_net
+    
+    def build_value_net(self):
+        """
+        Build the value model.
+        """
+        # Add the configuration file properties of the architecture chosen
+        for i in range(len(self._conf.archs_available)):
+            if self._conf.archs_available[i]["name"] == self._conf.v_function_arch:
+                value_conf: defaultdict = self._conf.archs_available[i].copy()
+                break
+
+        print(f"Using {value_conf.pop('name')} architecture for the value function.")
+
+        # Create the value model
+        if self._conf.v_function_arch == "SimpleMLP":
+            value_conf["input_dim"] = self._conf.max_len * self._conf.state_dim
+            value_conf["output_dim"] = 1
+            value_net = SimpleMLP(**value_conf, device=self._device)
+        else:
+            raise ValueError(f"Value architecture {self._conf.v_function_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
+
+        return value_net
+
+class PPOAlgorithm():
     """
     Proximal Policy Optimization (PPO) algorithm.
     """

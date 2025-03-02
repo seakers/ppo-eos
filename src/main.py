@@ -4,11 +4,8 @@ import argparse
 import traceback
 
 import torch
-import torch.nn as nn
-from tensordict.nn.distributions import NormalParamExtractor
 
 from scripts.ppo import ProximalPolicyOptimization
-from scripts.model import SimpleMLP
 from scripts.utils import DataFromJSON
 from scripts.client import Client
 
@@ -42,46 +39,16 @@ if __name__ == "__main__":
         # Create configuration object
         conf = DataFromJSON(config, "configuration")
 
-        # Create the policy model
-        n_hidden = 256
-        policy_net = SimpleMLP(
-            input_dim=conf.max_len*conf.state_dim,
-            n_hidden=n_hidden,
-            output_dim=conf.action_dim,
-            device=device
-        )
-
-        # Create the value model
-        value_net = SimpleMLP(
-            input_dim=conf.max_len*conf.state_dim,
-            n_hidden=n_hidden,
-            output_dim=1,
-            device=device
-        )
-
-        # Create the SAC algorithm
+        # Create the Proximal Policy Optimization (PPO) object
         ppo = ProximalPolicyOptimization(
             client=client,
             conf=conf,
-            policy=policy_net,
-            v_function=value_net,
-            horizon=conf.horizon,
-            minibatch_size=conf.minibatch_size,
-            optim_steps=conf.optim_steps,
-            max_grad=conf.max_grad_norm,
-            epsilon=conf.clip_epsilon,
-            gamma=conf.discount,
-            lmbda=conf.gae_lambda,
-            c1=conf.v_loss_coef,
-            c2=conf.entropy_coef,
+            save_path=args.save,
             device=device
         )
 
-        # Start the SAC algorithm
-        ppo.learn(conf.learn_steps)
-
-        # Test the model
-        ppo.test(conf.test_steps)
+        # Start PPO
+        ppo.start()
     
     except Exception as e:
         print(f"Error: {e}")

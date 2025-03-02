@@ -9,7 +9,7 @@ class SimpleMLP(nn.Module):
         self.n_hidden = n_hidden
         self.out_dim = output_dim
         self.gpu_device = device
-        self.seq= nn.Sequential(
+        self.seq = nn.Sequential(
             nn.Linear(input_dim, n_hidden, device=device),
             nn.Tanh(),
             nn.Linear(n_hidden, n_hidden, device=device),
