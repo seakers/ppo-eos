@@ -51,7 +51,7 @@ class ProximalPolicyOptimization():
         value_net = self.build_value_net()
 
         # Create the PPO algorithm
-        ppo = PPOAlgorithm(
+        ppo_algo = PPOAlgorithm(
             client=self._client,
             conf=self._conf,
             policy=policy_net,
@@ -69,10 +69,10 @@ class ProximalPolicyOptimization():
         )
 
         # Start the PPO algorithm
-        ppo.learn(self._conf.learn_steps)
+        ppo_algo.learn(self._conf.learn_steps)
 
         # Test the model
-        ppo.test(self._conf.test_steps)
+        ppo_algo.test(self._conf.test_steps)
 
     def build_policy_net(self):
         """
@@ -325,4 +325,5 @@ class PPOAlgorithm():
         """
         Run the agent in the environment for a specified number of timesteps.
         """
+        print("Testing the model...")
         self._collector.test(n_steps=n_steps)

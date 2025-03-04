@@ -74,7 +74,7 @@ class DataCollectorFromEarthGym():
                 with set_exploration_type(ExplorationType.RANDOM):
                     observation, _ = self.prettify_observation(self._states, self._actions)
                     loc, scale, action, log_prob = self._policy(observation)
-                    curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action.reshape(-1))
+                    curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action)
 
                 if done:
                     raise StopIteration
@@ -261,7 +261,7 @@ class DataCollectorFromEarthGym():
             with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
                 observation, _ = self.prettify_observation(self._states, self._actions)
                 loc, scale, action, log_prob = self._policy(observation)
-                curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action.reshape(-1))
+                curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action)
 
             if done:
                 n_steps = i + 1
@@ -270,7 +270,7 @@ class DataCollectorFromEarthGym():
 
             total_rewards.append(reward.detach().item())
 
-        print(f"Average rewards per trajectory: {sum(total_rewards)/n_steps:.4f}")
+        print(f"Average rewards per step: {sum(total_rewards)/n_steps:.4f}")
         
     def normalize_state(self, state: dict) -> list:
         """
