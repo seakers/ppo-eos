@@ -126,10 +126,23 @@ class ProximalPolicyOptimization():
             value_conf["input_dim"] = self._conf.max_len * self._conf.state_dim
             value_conf["output_dim"] = 1
             value_net = SimpleMLP(**value_conf, device=self._device)
+        elif self._conf.policy_arch == "MLP":
+            value_conf["in_dim"] = self._conf.max_len * self._conf.state_dim
+            value_conf["out_dim"] = 1
+            value_net = MLPModelEOS(**value_conf, device=self._device)
+        elif self._conf.policy_arch == "TransformerEncoder":
+            value_conf["src_dim"] = self._conf.state_dim
+            value_conf["out_dim"] = 1
+            value_net = TransformerEncoderModelEOS(**value_conf, device=self._device)
+        elif self._conf.policy_arch == "Transformer":
+            value_conf["src_dim"] = self._conf.state_dim
+            value_conf["tgt_dim"] = self._conf.action_dim
+            value_conf["out_dim"] = 1
+            value_net = TransformerModelEOS(**value_conf, device=self._device)
         else:
             raise ValueError(f"Value architecture {self._conf.v_function_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
 
-        return value_net
+        return value_net.to(self._device)
 
 class PPOAlgorithm():
     """
