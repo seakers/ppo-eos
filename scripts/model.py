@@ -9,7 +9,8 @@ class SimpleMLP(nn.Module):
             input_dim: int,
             n_hidden: int,
             output_dim: int,
-            device: torch.device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            is_value_fn: bool = False,
+            device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
         super(SimpleMLP, self).__init__()
         self.in_dim = input_dim
@@ -23,8 +24,8 @@ class SimpleMLP(nn.Module):
             nn.Tanh(),
             nn.Linear(n_hidden, n_hidden, device=device),
             nn.Tanh(),
-            nn.Linear(n_hidden, 2 * output_dim, device=device),
-            NormalParamExtractor(),
+            nn.Linear(n_hidden, 2 * output_dim if not is_value_fn else output_dim, device=device),
+            NormalParamExtractor() if not is_value_fn else nn.Identity(),
         )
 
     def forward(self, x):        
@@ -33,9 +34,9 @@ class SimpleMLP(nn.Module):
             # Add zeros to the tensor where x has size (batch_size, seq_len, state_dim)
             x = torch.cat([x, torch.zeros(self.in_dim - x.shape[-1]).to(self.gpu_device)], dim=-1)
 
-        loc, scale = self.seq(x)
+        x = self.seq(x)
 
-        return loc, scale
+        return x
 
 class FloatEmbedder(nn.Module):
     """"
@@ -292,11 +293,13 @@ class TransformerModelEOS(nn.Module):
             activation: str = "relu",
             batch_first: bool = True,
             kaiming_init: bool = False,
-            device: torch.device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            is_value_fn: bool = False,
+            device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
         super(TransformerModelEOS, self).__init__()
         self.model_type = "Earth Observation Model"
         self.out_dim = out_dim
+        self.is_value_fn = is_value_fn
 
         encoding_segment_size = int(torch.clamp(torch.tensor(d_model // 100), min=2, max=5).item()) # segment size is between 2 and 5
         embed_dim = d_model - encoding_segment_size
@@ -343,7 +346,7 @@ class TransformerModelEOS(nn.Module):
 
         projector = Projector(
             in_dim=d_model,
-            out_dim=int(2 * out_dim)
+            out_dim=int(2 * out_dim if not is_value_fn else out_dim)
         )
 
         self.src_embedder = src_embedder
@@ -351,6 +354,7 @@ class TransformerModelEOS(nn.Module):
         self.pos_encoder = pos_encoder
         self.transformer = transformer
         self.projector = projector
+        self.npe = NormalParamExtractor() if not is_value_fn else nn.Identity()
         self.gpu_device = device
 
         if self.transformer.architecture_type != "Transformer":
@@ -384,15 +388,23 @@ class TransformerModelEOS(nn.Module):
         mask = self.transformer._generate_square_subsequent_mask(seq_len)
 
         # Pass the input src and tgt through the transformer
-        output = self.transformer(src, tgt, src_mask=mask, tgt_mask=mask, memory_mask=mask, src_is_causal=True, tgt_is_causal=True, memory_is_causal=True)
+        x = self.transformer(src, tgt, src_mask=mask, tgt_mask=mask, memory_mask=mask, src_is_causal=True, tgt_is_causal=True, memory_is_causal=True)
 
         # Pass the output through the projector
-        stochastic_output: torch.Tensor = self.projector(output)
+        x = self.projector(x)
 
         # Apply the normal parameter extractor
-        loc, scale = self.npe(stochastic_output)
+        x = self.npe(x) # (loc, scale) if not is_value_fn else (value)
 
-        return loc, scale
+        # If while in training mode, return the last sequence only
+        if self.training:
+            if self.is_value_fn:
+                return x[:, -1, :]
+            else:
+                loc, scale = x
+                return loc[:, -1, :], scale[:, -1, :]
+
+        return x
 
 #################################################
 #
@@ -424,11 +436,13 @@ class TransformerEncoderModelEOS(nn.Module):
             activation: str = "relu",
             batch_first: bool = True,
             kaiming_init: bool = False,
-            device: torch.device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            is_value_fn: bool = False,
+            device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
         super(TransformerEncoderModelEOS, self).__init__()
         self.model_type = "Earth Observation Model"
         self.out_dim = out_dim
+        self.is_value_fn = is_value_fn
 
         encoding_segment_size = int(torch.clamp(torch.tensor(d_model // 100), min=2, max=5).item()) # segment size is between 2 and 5
         embed_dim = d_model - encoding_segment_size
@@ -468,7 +482,7 @@ class TransformerEncoderModelEOS(nn.Module):
 
         projector = Projector(
             in_dim=d_model,
-            out_dim=int(2 * out_dim)
+            out_dim=int(2 * out_dim if not is_value_fn else out_dim)
         )
 
         self.src_embedder = src_embedder
@@ -476,17 +490,15 @@ class TransformerEncoderModelEOS(nn.Module):
         self.transformer_encoder = transformer_encoder
         self.projector = projector
         self.gpu_device = device
-        self.npe = NormalParamExtractor()
+        self.npe = NormalParamExtractor() if not is_value_fn else nn.Identity()
 
         if self.transformer_encoder.architecture_type != "TransformerEncoder":
             raise ValueError("The model is not a transformer.")
 
-    def forward(self, src):
+    def forward(self, src: torch.Tensor):
         with torch.no_grad():            
             # Check whether they are batched or not
-            if src.dim() == 1:
-                src = src.unsqueeze(0).unsqueeze(0)
-            elif src.dim() == 2:
+            while src.dim() < 3:
                 src = src.unsqueeze(0)
 
         seq_len = src.shape[1]
@@ -498,15 +510,23 @@ class TransformerEncoderModelEOS(nn.Module):
         mask = self.transformer_encoder._generate_square_subsequent_mask(seq_len)
 
         # Pass the input src through the transformer
-        output = self.transformer_encoder(src, mask=mask, is_causal=True)
+        x = self.transformer_encoder(src, mask=mask, is_causal=True)
 
         # Pass the output through the projector
-        stochastic_output: torch.Tensor = self.projector(output)
+        x = self.projector(x)
 
         # Apply the normal parameter extractor
-        loc, scale = self.npe(stochastic_output)
+        x: torch.Tensor = self.npe(x) # (loc, scale) if not is_value_fn else (value)
 
-        return loc, scale
+        # If while in training mode, return the last sequence only
+        if self.training:
+            if self.is_value_fn:
+                return x[:, -1, :]
+            else:
+                loc, scale = x
+                return loc[:, -1, :], scale[:, -1, :]
+
+        return x
 
 #########################################################
 #
@@ -524,13 +544,14 @@ class MLPModelEOS(nn.Module):
             out_dim: int,
             hidden_layers: tuple[int],
             dropout: float,
-            device: torch.device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            is_value_fn: bool = False,
+            device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ):
         super(MLPModelEOS, self).__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.gpu_device = device
-        self.npe = NormalParamExtractor()
+        self.npe = NormalParamExtractor() if not is_value_fn else nn.Identity()
 
         layers = []
         layers.append(nn.Linear(in_dim, hidden_layers[0]))
@@ -542,7 +563,7 @@ class MLPModelEOS(nn.Module):
             layers.append(nn.Dropout(p=dropout))
         
         layers.append(nn.LayerNorm(hidden_layers[-1]))
-        layers.append(nn.Linear(hidden_layers[-1], 2 * out_dim))
+        layers.append(nn.Linear(hidden_layers[-1], 2 * out_dim if not is_value_fn else out_dim))
         self.mlp = nn.Sequential(*layers)
 
         self.init_weights()
@@ -566,9 +587,9 @@ class MLPModelEOS(nn.Module):
             x = torch.cat([x, torch.zeros(x.shape[0], x.shape[1], self.in_dim - x.shape[-1]).to(self.gpu_device)], dim=-1)
 
         # Pass the input tensor through the MLP
-        stochastic_actions = self.mlp(x)
+        x = self.mlp(x)
 
         # Apply the normal parameter extractor
-        loc, scale = self.npe(stochastic_actions)
+        x = self.npe(x) # (loc, scale) if not is_value_fn else (value)
 
-        return loc, scale
+        return x

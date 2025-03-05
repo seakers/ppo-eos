@@ -48,9 +48,10 @@ class DataCollectorFromEarthGym():
         # Fields from main td
         _action = []
         _done = []
+        _actions_as_tgt = []
         _loc = []
         _policy_observation = []
-        _v_function_observation = []
+        _value_fn_observation = []
         _sample_log_prob = []
         _scale = []
         _step_count = []
@@ -63,7 +64,7 @@ class DataCollectorFromEarthGym():
         # Fields from next td
         _next_done = []
         _next_policy_observation = []
-        _next_v_function_observation = []
+        _next_value_fn_observation = []
         _next_reward = []
         _next_step_count = []
         _next_terminated = []
@@ -73,8 +74,9 @@ class DataCollectorFromEarthGym():
             for _ in range(self._batch_steps):
                 with set_exploration_type(ExplorationType.RANDOM):
                     observation, _ = self.prettify_observation(self._states, self._actions)
-                    loc, scale, action, log_prob = self._policy(observation)
-                    curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action)
+                    actions_as_tgt = self._actions.clone()
+                    loc, scale, action, log_prob = self._policy(observation) if self._conf.policy_arch != "Transformer" else self._policy(observation, actions_as_tgt)
+                    curr_policy_obs, curr_value_fn_obs, next_policy_obs, next_value_fn_obs, reward, done = self.move_once(action)
 
                 if done:
                     raise StopIteration
@@ -84,12 +86,28 @@ class DataCollectorFromEarthGym():
                 else:
                     terminated = truncated = False
 
+                # In transformer architectures, we need to ignore the batch dimension (they will stack)
+                while observation.dim() > 2:
+                    observation = observation.squeeze(0)
+                    curr_policy_obs = curr_policy_obs.squeeze(0)
+                    curr_value_fn_obs = curr_value_fn_obs.squeeze(0)
+                    next_policy_obs = next_policy_obs.squeeze(0)
+                    next_value_fn_obs = next_value_fn_obs.squeeze(0)
+                    actions_as_tgt = actions_as_tgt.squeeze(0)
+
+                # In transformer architectures, we have ignored all actions except the last one so we need to ignore other dimensions (they will stack)
+                while action.dim() > 1:
+                    action = action.squeeze(0)
+                    loc = loc.squeeze(0)
+                    scale = scale.squeeze(0)
+
                 # Fields from main td
                 _action.append(action)
                 _done.append(False)
+                _actions_as_tgt.append(actions_as_tgt)
                 _loc.append(loc)
                 _policy_observation.append(curr_policy_obs)
-                _v_function_observation.append(curr_v_function_obs)
+                _value_fn_observation.append(curr_value_fn_obs)
                 _sample_log_prob.append(log_prob)
                 _scale.append(scale)
                 _step_count.append(self._step_count)
@@ -102,7 +120,7 @@ class DataCollectorFromEarthGym():
                 # Fields from next td
                 _next_done.append(terminated or truncated)
                 _next_policy_observation.append(next_policy_obs)
-                _next_v_function_observation.append(next_v_function_obs)
+                _next_value_fn_observation.append(next_value_fn_obs)
                 _next_reward.append(reward)
                 _next_step_count.append(self._step_count + 1)
                 _next_terminated.append(terminated)
@@ -118,10 +136,11 @@ class DataCollectorFromEarthGym():
 
             return TensorDict({
                 "action": torch.stack(_action, dim=0).clone().detach().to(self._device),
+                "actions_as_tgt": torch.stack(_actions_as_tgt, dim=0).clone().detach().to(self._device),
                 "done": torch.tensor(_done, device=self._device),
                 "loc": torch.stack(_loc, dim=0).clone().detach().to(self._device),
                 "policy_observation": torch.stack(_policy_observation, dim=0).clone().detach().to(self._device),
-                "v_function_observation": torch.stack(_v_function_observation, dim=0).clone().detach().to(self._device),
+                "value_fn_observation": torch.stack(_value_fn_observation, dim=0).clone().detach().to(self._device),
                 "sample_log_prob": torch.stack(_sample_log_prob, dim=0).clone().detach().to(self._device),
                 "scale": torch.stack(_scale, dim=0).clone().detach().to(self._device),
                 "step_count": torch.tensor(_step_count, device=self._device),
@@ -133,9 +152,10 @@ class DataCollectorFromEarthGym():
                 }, batch_size=self._batch_steps),
 
                 "next": TensorDict({
+                    "actions_as_tgt": torch.stack(_actions_as_tgt, dim=0).clone().detach().to(self._device),
                     "done": torch.tensor(_next_done, device=self._device),
                     "policy_observation": torch.stack(_next_policy_observation, dim=0).clone().detach().to(self._device),
-                    "v_function_observation": torch.stack(_next_v_function_observation, dim=0).clone().detach().to(self._device),
+                    "value_fn_observation": torch.stack(_next_value_fn_observation, dim=0).clone().detach().to(self._device),
                     "reward": torch.stack(_next_reward, dim=0).clone().detach().to(self._device),
                     "step_count": torch.tensor(_next_step_count, device=self._device),
                     "terminated": torch.tensor(_next_terminated, device=self._device),
@@ -184,14 +204,14 @@ class DataCollectorFromEarthGym():
         """
         with torch.no_grad():
             # Get the current observation
-            curr_policy_obs, curr_v_function_obs = self.prettify_observation(self._states, self._actions)
+            curr_policy_obs, curr_value_fn_obs = self.prettify_observation(self._states, self._actions)
 
             # --------------- Environment's job to provide info ---------------
             sending_data = {
                 "agent_id": 0,
                 "action": {
-                    "d_pitch": action[0].item() * self._conf.a_conversions[0],
-                    "d_roll": action[1].item() * self._conf.a_conversions[1]
+                    "d_pitch": action[(-1,) * (action.dim() - 1) + (0,)].item() * self._conf.a_conversions[0],
+                    "d_roll": action[(-1,) * (action.dim() - 1) + (1,)].item() * self._conf.a_conversions[1]
                 },
                 "delta_time": self._conf.time_increment
             }
@@ -214,41 +234,51 @@ class DataCollectorFromEarthGym():
             # --------------- Environment's job to provide info ---------------
 
             # Add it to the states
-            self._states = torch.cat([self._states, s_next.unsqueeze(0).unsqueeze(0).to(self._device)], dim=1)
+            while s_next.dim() < self._states.dim():
+                s_next = s_next.unsqueeze(0)
+            self._states = torch.cat([self._states, s_next.to(self._device)], dim=1)
 
             # Add it to the actions
-            self._actions = torch.cat([self._actions, action.unsqueeze(0).unsqueeze(0)], dim=1)
+            while action.dim() < self._actions.dim():
+                action = action.unsqueeze(0)
+            self._actions = torch.cat([self._actions, action], dim=1)
 
             # Adjust the maximum length of the states and actions
             self._states = self._states[:, -self._conf.max_len:, :]
             self._actions = self._actions[:, -self._conf.max_len:, :]
 
             # Arrange the next observation as the model expects
-            next_policy_obs, next_v_function_obs = self.prettify_observation(self._states, self._actions)
+            next_policy_obs, next_value_fn_obs = self.prettify_observation(self._states, self._actions)
 
-            return curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, r, False
+            return curr_policy_obs, curr_value_fn_obs, next_policy_obs, next_value_fn_obs, r, False
         
     def prettify_observation(self, states: torch.Tensor, actions: torch.Tensor):
         """
         Arrange the next observation as the model expects.
         """
-        # Clone the states and actions to avoid in-place operations
+        # Clone the tensors to avoid in-place operations
         states = states.clone()
         actions = actions.clone()
 
-        # Add or not the actions to the observation
-        if self._conf.obs_has_actions:
-            obs = torch.cat([states, actions], dim=-1)
-        else:
-            obs = states
-        
-        if not self._conf.policy_is_sequence:
-            policy_obs = obs.view(-1)
-        
-        if not self._conf.v_function_is_sequence:
-            v_function_obs = obs.view(-1)
+        sequential_models = ["Transformer", "TransformerEncoder"]
 
-        return policy_obs, v_function_obs
+        # See if the policy is a sequential model
+        if self._conf.policy_arch in sequential_models:
+            policy_obs = states
+        else:
+            policy_obs = states.view(-1)
+
+        # Check if we have a transformer policy but not a transformer value function
+        if self._conf.policy_arch == "Transformer" and not self._conf.value_fn_arch != "Transformer":
+            value_fn_obs = torch.cat([states, actions], dim=-1)
+        else:
+            value_fn_obs = states
+
+        # See if the value function is a sequential model
+        if self._conf.value_fn_arch not in sequential_models:
+            value_fn_obs = value_fn_obs.view(-1)
+
+        return policy_obs, value_fn_obs
         
     def test(self, n_steps: int=10000):
         """
@@ -261,7 +291,7 @@ class DataCollectorFromEarthGym():
             with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
                 observation, _ = self.prettify_observation(self._states, self._actions)
                 loc, scale, action, log_prob = self._policy(observation)
-                curr_policy_obs, curr_v_function_obs, next_policy_obs, next_v_function_obs, reward, done = self.move_once(action)
+                curr_policy_obs, curr_value_fn_obs, next_policy_obs, next_value_fn_obs, reward, done = self.move_once(action)
 
             if done:
                 n_steps = i + 1

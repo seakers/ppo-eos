@@ -55,7 +55,7 @@ class ProximalPolicyOptimization():
             client=self._client,
             conf=self._conf,
             policy=policy_net,
-            v_function=value_net,
+            value_fn=value_net,
             horizon=self._conf.horizon,
             minibatch_size=self._conf.minibatch_size,
             optim_steps=self._conf.optim_steps,
@@ -98,11 +98,13 @@ class ProximalPolicyOptimization():
         elif self._conf.policy_arch == "TransformerEncoder":
             policy_conf["src_dim"] = self._conf.state_dim
             policy_conf["out_dim"] = self._conf.action_dim
+            policy_conf["max_len"] = self._conf.max_len
             policy_net = TransformerEncoderModelEOS(**policy_conf, device=self._device)
         elif self._conf.policy_arch == "Transformer":
             policy_conf["src_dim"] = self._conf.state_dim
             policy_conf["tgt_dim"] = self._conf.action_dim
             policy_conf["out_dim"] = self._conf.action_dim
+            policy_conf["max_len"] = self._conf.max_len
             policy_net = TransformerModelEOS(**policy_conf, device=self._device)
         else:
             raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
@@ -115,14 +117,15 @@ class ProximalPolicyOptimization():
         """
         # Add the configuration file properties of the architecture chosen
         for i in range(len(self._conf.archs_available)):
-            if self._conf.archs_available[i]["name"] == self._conf.v_function_arch:
+            if self._conf.archs_available[i]["name"] == self._conf.value_fn_arch:
                 value_conf: defaultdict = self._conf.archs_available[i].copy()
                 break
 
         print(f"Using {value_conf.pop('name')} architecture for the value function.")
+        value_conf["is_value_fn"] = True
 
         # Create the value model
-        if self._conf.v_function_arch == "SimpleMLP":
+        if self._conf.value_fn_arch == "SimpleMLP":
             value_conf["input_dim"] = self._conf.max_len * self._conf.state_dim
             value_conf["output_dim"] = 1
             value_net = SimpleMLP(**value_conf, device=self._device)
@@ -133,14 +136,16 @@ class ProximalPolicyOptimization():
         elif self._conf.policy_arch == "TransformerEncoder":
             value_conf["src_dim"] = self._conf.state_dim
             value_conf["out_dim"] = 1
+            value_conf["max_len"] = self._conf.max_len
             value_net = TransformerEncoderModelEOS(**value_conf, device=self._device)
         elif self._conf.policy_arch == "Transformer":
             value_conf["src_dim"] = self._conf.state_dim
             value_conf["tgt_dim"] = self._conf.action_dim
             value_conf["out_dim"] = 1
+            value_conf["max_len"] = self._conf.max_len
             value_net = TransformerModelEOS(**value_conf, device=self._device)
         else:
-            raise ValueError(f"Value architecture {self._conf.v_function_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
+            raise ValueError(f"Value architecture {self._conf.value_fn_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
 
         return value_net.to(self._device)
 
@@ -153,7 +158,7 @@ class PPOAlgorithm():
             client: any,
             conf: object,
             policy: nn.Module,
-            v_function: nn.Module,
+            value_fn: nn.Module,
             horizon: int = 2048,
             minibatch_size: int = 64,
             optim_steps: int = 10,
@@ -173,7 +178,7 @@ class PPOAlgorithm():
         self._client = client
         self._conf = conf
         self._policy = policy
-        self._v_function = v_function
+        self._value_fn = value_fn
         self._horizon = horizon
         self._minibatch_size = minibatch_size
         self._optim_steps = optim_steps
@@ -196,7 +201,7 @@ class PPOAlgorithm():
         ########################### PPO Core ###########################
         policy_td_module = TensorDictModule(
             module=self._policy,
-            in_keys=["policy_observation"],
+            in_keys=["policy_observation"] if self._conf.policy_arch != "Transformer" else ["policy_observation", "actions_as_tgt"],
             out_keys=["loc", "scale"]
         )
 
@@ -212,8 +217,8 @@ class PPOAlgorithm():
         )
 
         self._value_module = ValueOperator(
-            module=self._v_function,
-            in_keys=["v_function_observation"]
+            module=self._value_fn,
+            in_keys=["value_fn_observation"] if self._conf.value_fn_arch != "Transformer" else ["value_fn_observation", "actions_as_tgt"]
         )
 
         self._advantage_module = GAE(
