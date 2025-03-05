@@ -4,7 +4,6 @@ import torch.optim
 
 from tqdm import tqdm
 from collections import defaultdict
-import pandas as pd
 import matplotlib.pyplot as plt
 
 from torchrl.data import LazyTensorStorage, SamplerWithoutReplacement
@@ -12,19 +11,20 @@ from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.objectives import ClipPPOLoss
 from torchrl.objectives.value import GAE
 from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
-from torchrl.envs.utils import ExplorationType, set_exploration_type
 
-from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
 
 from scripts.data import DataCollectorFromEarthGym
 from scripts.model import SimpleMLP
+from scripts.model import MLPModelEOS
+from scripts.model import TransformerEncoderModelEOS
+from scripts.model import TransformerModelEOS
 from scripts.client import Client
 from scripts.utils import DataFromJSON
 
 class ProximalPolicyOptimization():
     """
-    Proximal Policy Optimization (PPO) <https://arxiv.org/abs/1707.06347>`_ algorithm.
+    Proximal Policy Optimization (PPO) <https://arxiv.org/abs/1707.06347> algorithm.
     """
     def __init__(
             self,
@@ -86,15 +86,28 @@ class ProximalPolicyOptimization():
 
         print(f"Using {policy_conf.pop("name")} architecture for the policy.")
 
-        # Create the policy model
+        # Create the policy network
         if self._conf.policy_arch == "SimpleMLP":
             policy_conf["input_dim"] = self._conf.max_len * self._conf.state_dim
             policy_conf["output_dim"] = self._conf.action_dim
             policy_net = SimpleMLP(**policy_conf, device=self._device)
+        elif self._conf.policy_arch == "MLP":
+            policy_conf["in_dim"] = self._conf.max_len * self._conf.state_dim
+            policy_conf["out_dim"] = self._conf.action_dim
+            policy_net = MLPModelEOS(**policy_conf, device=self._device)
+        elif self._conf.policy_arch == "TransformerEncoder":
+            policy_conf["src_dim"] = self._conf.state_dim
+            policy_conf["out_dim"] = self._conf.action_dim
+            policy_net = TransformerEncoderModelEOS(**policy_conf, device=self._device)
+        elif self._conf.policy_arch == "Transformer":
+            policy_conf["src_dim"] = self._conf.state_dim
+            policy_conf["tgt_dim"] = self._conf.action_dim
+            policy_conf["out_dim"] = self._conf.action_dim
+            policy_net = TransformerModelEOS(**policy_conf, device=self._device)
         else:
             raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
 
-        return policy_net
+        return policy_net.to(self._device)
     
     def build_value_net(self):
         """
