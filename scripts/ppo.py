@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim
 
+import os
 from tqdm import tqdm
 from collections import defaultdict
 import matplotlib.pyplot as plt
@@ -24,7 +25,7 @@ from scripts.utils import DataFromJSON
 
 class ProximalPolicyOptimization():
     """
-    Proximal Policy Optimization (PPO) <https://arxiv.org/abs/1707.06347> algorithm.
+    Proximal Policy Optimization (PPO).
     """
     def __init__(
             self,
@@ -73,6 +74,12 @@ class ProximalPolicyOptimization():
 
         # Test the model
         ppo_algo.test(self._conf.test_steps)
+
+        # Save the model
+        ppo_algo.save_models(self._save_path)
+
+        # Plot and save the learning progress
+        ppo_algo.plot_learning_progress(self._save_path)
 
     def build_policy_net(self):
         """
@@ -151,7 +158,7 @@ class ProximalPolicyOptimization():
 
 class PPOAlgorithm():
     """
-    Proximal Policy Optimization (PPO) algorithm.
+    Proximal Policy Optimization (PPO) <https://arxiv.org/abs/1707.06347> algorithm.
     """
     def __init__(
             self,
@@ -330,9 +337,15 @@ class PPOAlgorithm():
 
         # Save the logs
         self._pbar.close()
-        self.plot_learning_progress()
+    
+    def test(self, n_steps: int = 10000):
+        """
+        Run the agent in the environment for a specified number of timesteps.
+        """
+        print("Testing the model...")
+        self._collector.test(n_steps=n_steps)
 
-    def plot_learning_progress(self):
+    def plot_learning_progress(self, path: str = "."):
         """
         Plot the learning progress.
         """
@@ -349,12 +362,23 @@ class PPOAlgorithm():
         plt.subplot(2, 2, 4)
         plt.plot(self._logs["eval step_count"])
         plt.title("Max step count (test)")
-        plt.savefig(f"learning_progress.png", dpi=500)
+        plt.savefig(f"{path}/learning_progress.png", dpi=500)
         plt.close()
-    
-    def test(self, n_steps: int = 10000):
+
+    def save_models(self, path: str = "."):
         """
-        Run the agent in the environment for a specified number of timesteps.
+        Save the following models:
+        - Policy
+        - Probabilistic actor
+        - Value function
+        - Value operator 
         """
-        print("Testing the model...")
-        self._collector.test(n_steps=n_steps)
+        # Make sure the path exists
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        # Save in .pt files
+        torch.save(self._policy.state_dict(), f"{path}/policy.pt")
+        torch.save(self._actor.state_dict(), f"{path}/prob_actor.pt")
+        torch.save(self._value_fn.state_dict(), f"{path}/value_fn.pt")
+        torch.save(self._value_module.state_dict(), f"{path}/value_operator.pt")
