@@ -183,10 +183,10 @@ class DataCollectorFromEarthGym():
         vec_state = self.normalize_state(state)
 
         # Input tensor of 1 batch and 1 sequence of state_dim dimensional states
-        self._states = torch.FloatTensor([[vec_state]], device=self._device)
+        self._states = torch.tensor([[vec_state]], dtype=torch.float32, device=self._device)
 
         # Input tensor of 1 batch and 1 sequence of action_dim dimensional actions
-        self._actions = torch.FloatTensor([[[0, 0]]], device=self._device)
+        self._actions = torch.tensor([[[0, 0]]], dtype=torch.float, device=self._device)
 
         # Make max_len dummy moves to have a long enough observation
         self.n_dummy_moves(n=self._conf.max_len)
@@ -196,7 +196,7 @@ class DataCollectorFromEarthGym():
         Do n dummy moves to stabilize the environment.
         """
         for _ in range(n):
-            _, _, _, _, _, _ = self.move_once(torch.FloatTensor([0] * self._conf.action_dim))
+            _, _, _, _, _, _ = self.move_once(torch.tensor([0] * self._conf.action_dim, dtype=torch.float32))
 
     def move_once(self, action: torch.Tensor):
         """
@@ -230,7 +230,7 @@ class DataCollectorFromEarthGym():
             r = torch.tensor(reward * self._conf.reward_scale, dtype=torch.float32)
 
             # Get the next state
-            s_next = torch.FloatTensor(vec_state)
+            s_next = torch.tensor(vec_state, dtype=torch.float32)
             # --------------- Environment's job to provide info ---------------
 
             # Add it to the states
@@ -241,7 +241,7 @@ class DataCollectorFromEarthGym():
             # Add it to the actions
             while action.dim() < self._actions.dim():
                 action = action.unsqueeze(0)
-            self._actions = torch.cat([self._actions, action], dim=1)
+            self._actions = torch.cat([self._actions, action.to(self._device)], dim=1)
 
             # Adjust the maximum length of the states and actions
             self._states = self._states[:, -self._conf.max_len:, :]
