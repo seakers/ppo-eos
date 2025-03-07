@@ -269,7 +269,7 @@ class DataCollectorFromEarthGym():
             policy_obs = states.view(-1)
 
         # Check if we have a transformer policy but not a transformer value function
-        if self._conf.policy_arch == "Transformer" and not self._conf.value_fn_arch != "Transformer":
+        if self._conf.policy_arch == "Transformer" and self._conf.value_fn_arch != "Transformer":
             value_fn_obs = torch.cat([states, actions], dim=-1)
         else:
             value_fn_obs = states
