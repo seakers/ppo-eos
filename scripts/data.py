@@ -290,7 +290,8 @@ class DataCollectorFromEarthGym():
         for i in range(int(n_steps)):
             with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
                 observation, _ = self.prettify_observation(self._states, self._actions)
-                loc, scale, action, log_prob = self._policy(observation)
+                actions_as_tgt = self._actions.clone()
+                loc, scale, action, log_prob = self._policy(observation) if self._conf.policy_arch != "Transformer" else self._policy(observation, actions_as_tgt)
                 curr_policy_obs, curr_value_fn_obs, next_policy_obs, next_value_fn_obs, reward, done = self.move_once(action)
 
             if done:

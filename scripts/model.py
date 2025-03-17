@@ -386,6 +386,7 @@ class TransformerModelEOS(nn.Module):
 
         # Set the src and tgt masks
         mask = self.transformer._generate_square_subsequent_mask(seq_len)
+        mask = mask.to(src.device)
 
         # Pass the input src and tgt through the transformer
         x = self.transformer(src, tgt, src_mask=mask, tgt_mask=mask, memory_mask=mask, src_is_causal=True, tgt_is_causal=True, memory_is_causal=True)
@@ -508,6 +509,7 @@ class TransformerEncoderModelEOS(nn.Module):
 
         # Set the src mask
         mask = self.transformer_encoder._generate_square_subsequent_mask(seq_len)
+        mask = mask.to(src.device)
 
         # Pass the input src through the transformer
         x = self.transformer_encoder(src, mask=mask, is_causal=True)
