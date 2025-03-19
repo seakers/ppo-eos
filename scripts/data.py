@@ -5,12 +5,14 @@ from tensordict import TensorDict
 from torchrl.envs.utils import ExplorationType, set_exploration_type
 from torchrl.modules import ProbabilisticActor
 
+from scripts.client import Client
+
 RT = 6371.0 # Earth radius in km
 
 class DataCollectorFromEarthGym():
     def __init__(
             self,
-            client: any,
+            client: Client,
             conf: object,
             policy: ProbabilisticActor,
             batch_steps: int,

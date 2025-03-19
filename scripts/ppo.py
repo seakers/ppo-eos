@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim
 
 import os
+import pandas as pd
 from tqdm import tqdm
 from collections import defaultdict
 import matplotlib.pyplot as plt
@@ -162,7 +163,7 @@ class PPOAlgorithm():
     """
     def __init__(
             self,
-            client: any,
+            client: Client,
             conf: object,
             policy: nn.Module,
             value_fn: nn.Module,
@@ -349,19 +350,12 @@ class PPOAlgorithm():
         """
         Plot the learning progress.
         """
-        plt.figure(figsize=(10, 10))
-        plt.subplot(2, 2, 1)
+        # Plot rewards smoothed and with shaded error
+        rewards_df = pd.DataFrame(self._logs["reward"], columns=["Reward"])
+        rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
+
         plt.plot(self._logs["reward"])
         plt.title("Training rewards (average)")
-        plt.subplot(2, 2, 2)
-        plt.plot(self._logs["step_count"])
-        plt.title("Max step count (training)")
-        plt.subplot(2, 2, 3)
-        plt.plot(self._logs["eval reward (sum)"])
-        plt.title("Return (test)")
-        plt.subplot(2, 2, 4)
-        plt.plot(self._logs["eval step_count"])
-        plt.title("Max step count (test)")
         plt.savefig(f"{path}/learning_progress.png", dpi=500)
         plt.close()
 
