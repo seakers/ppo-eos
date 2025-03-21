@@ -71,6 +71,8 @@ class ProximalPolicyOptimization():
             device=self._device
         )
 
+        print("Starting the learning process...")
+
         # Start the PPO algorithm
         ppo_algo.learn(self._conf.learn_steps)
 
