@@ -96,7 +96,7 @@ class ProximalPolicyOptimization():
                 policy_conf: defaultdict = self._conf.archs_available[i].copy()
                 break
 
-        print(f"Using {policy_conf.pop("name")} architecture for the policy.")
+        print(f"Using {policy_conf.pop('name')} architecture for the policy.")
 
         # Create the policy network
         if self._conf.policy_arch == "SimpleMLP":
@@ -157,7 +157,7 @@ class ProximalPolicyOptimization():
             value_conf["max_len"] = self._conf.max_len
             value_net = TransformerModelEOS(**value_conf, device=self._device)
         else:
-            raise ValueError(f"Value architecture {self._conf.value_fn_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
+            raise ValueError(f"Value architecture {self._conf.value_fn_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
 
         return value_net.to(self._device)
 
