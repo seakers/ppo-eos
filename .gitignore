@@ -3,3 +3,4 @@ __pycache__/
 *.prof
 output/
 src/run.sh
+.venv/
