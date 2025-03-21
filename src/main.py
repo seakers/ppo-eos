@@ -1,6 +1,8 @@
-import json
-import sys
 import io
+import os
+import sys
+import json
+import psutil
 import pstats
 import cProfile
 import argparse
@@ -98,6 +100,11 @@ if __name__ == "__main__":
             # Stop tracing
             tracemalloc.stop()
             ###################### Memory allocation ######################
+        
+        # Memory used
+        process = psutil.Process(os.getpid())
+        memory_used = process.memory_info().rss
+        print(f"Memory used: {memory_used / (1024 ** 2):.2f} MB")
 
         # Shutdown the gym
         ppo._client.shutdown_gym()

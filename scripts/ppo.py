@@ -7,6 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 from collections import defaultdict
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 from torchrl.data import LazyTensorStorage, SamplerWithoutReplacement
 from torchrl.data.replay_buffers import ReplayBuffer
@@ -81,6 +82,9 @@ class ProximalPolicyOptimization():
 
         # Plot and save the learning progress
         ppo_algo.plot_learning_progress(self._save_path)
+
+        # Plot time usage
+        ppo_algo.plot_time_usage(self._save_path)
 
     def build_policy_net(self):
         """
@@ -281,6 +285,7 @@ class PPOAlgorithm():
         eval_str = ""
         self._actor.train()
         for i, tensordict_data in enumerate(self._collector):
+            now = datetime.now()
             # We now have a batch of data in tensordict_data
             for _ in range(self._optim_steps):
                 # We'll need an "advantage" signal to make PPO work
@@ -336,6 +341,8 @@ class PPOAlgorithm():
             # Update the learning rate
             self._lr_scheduler.step()
 
+            self._logs["time"].append((datetime.now() - now).total_seconds())
+
         # Save the logs
         self._pbar.close()
     
@@ -354,9 +361,22 @@ class PPOAlgorithm():
         rewards_df = pd.DataFrame(self._logs["reward"], columns=["Reward"])
         rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
 
-        plt.plot(self._logs["reward"])
+        plt.plot(rewards_df["Reward (smoothed)"])
         plt.title("Training rewards (average)")
         plt.savefig(f"{path}/learning_progress.png", dpi=500)
+        plt.close()
+
+    def plot_time_usage(self, path: str = "."):
+        """
+        Plot the time usage.
+        """
+        # Plot time usage
+        time_df = pd.DataFrame(self._logs["time"], columns=["Time"])
+        time_df["Time (smoothed)"] = time_df["Time"].rolling(window=int(len(time_df["Time"])/10)).mean()
+
+        plt.plot(time_df["Time (smoothed)"])
+        plt.title("Time usage per horizon")
+        plt.savefig(f"{path}/time_usage.png", dpi=500)
         plt.close()
 
     def save_models(self, path: str = "."):

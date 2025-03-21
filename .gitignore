@@ -2,3 +2,4 @@ __pycache__/
 *.log
 *.prof
 output/
+src/run.sh

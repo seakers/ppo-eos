@@ -188,7 +188,7 @@ class DataCollectorFromEarthGym():
         self._states = torch.tensor([[vec_state]], dtype=torch.float32, device=self._device)
 
         # Input tensor of 1 batch and 1 sequence of action_dim dimensional actions
-        self._actions = torch.tensor([[[0, 0]]], dtype=torch.float, device=self._device)
+        self._actions = torch.tensor([[[0] * self._conf.action_dim]], dtype=torch.float, device=self._device)
 
         # Make max_len dummy moves to have a long enough observation
         self.n_dummy_moves(n=self._conf.max_len)
