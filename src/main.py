@@ -16,7 +16,9 @@ from scripts.utils import DataFromJSON
 from scripts.client import Client
 
 if __name__ == "__main__":
-    try:        
+    try:
+        print("Starting the main script of ppo-eos...")
+
         # Gather the arguments
         argparse = argparse.ArgumentParser()
 
