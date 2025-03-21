@@ -4,3 +4,4 @@ __pycache__/
 output/
 src/run.sh
 .venv/
+venv/
