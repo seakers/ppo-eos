@@ -121,7 +121,7 @@ class ProximalPolicyOptimization():
             policy_conf["max_len"] = self._conf.max_len
             policy_net = TransformerModelEOS(**policy_conf, device=self._device)
         else:
-            raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i["name"] for i in self._conf.archs_available]}.")
+            raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
 
         return policy_net.to(self._device)
     
