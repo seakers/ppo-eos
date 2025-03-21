@@ -312,12 +312,12 @@ class PPOAlgorithm():
 
             self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
             cum_reward_str = (
-                f"Average reward: {self._logs["reward"][-1]:4f}, "
+                f"Average reward: {self._logs['reward'][-1]:4f}, "
             )
             self._logs["step_count"].append(tensordict_data["next", "step_count"].max().item())
-            stepcount_str = f"Step count (max): {self._logs["step_count"][-1]}, "
+            stepcount_str = f"Step count (max): {self._logs['step_count'][-1]}, "
             self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
-            lr_str = f"Policy lr: {self._logs["lr"][-1]:.6f}"
+            lr_str = f"Policy lr: {self._logs['lr'][-1]:.6f}"
 
             ########################### Testing ###########################
             # if i % 10 == 0 and False:
