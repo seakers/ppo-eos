@@ -330,8 +330,8 @@ class PPOAlgorithm():
             #     self._logs["step_count"].append(tensordict_data["step_count"].max().item())
             #     self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
             #     eval_str = (
-            #         f"Eval cumulative reward: {self._logs["eval reward (sum)"][-1]:4f}, "
-            #         f"Eval step count: {self._logs["eval step_count"][-1]}, "
+            #         f"Eval cumulative reward: {self._logs['eval reward (sum)'][-1]:4f}, "
+            #         f"Eval step count: {self._logs['eval step_count'][-1]}, "
             #     )
             ########################### Testing ###########################
             
