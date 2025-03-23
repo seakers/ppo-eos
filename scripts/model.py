@@ -90,8 +90,8 @@ class PositionalEncoder(nn.Module):
         self.d_model = d_model
         self.dropout = nn.Dropout(p=dropout)
 
-        pe = torch.empty((0, d_model), dtype=torch.float32, requires_grad=True)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(torch.log(torch.tensor(10000.0, requires_grad=True)) / d_model))
+        pe = torch.empty((0, d_model), dtype=torch.float32)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(torch.log(torch.tensor(10000.0)) / d_model))
 
         for pos in range(max_len):
             sines = torch.sin(pos * div_term)
@@ -101,12 +101,10 @@ class PositionalEncoder(nn.Module):
 
             pe = torch.cat((pe, interleaved.unsqueeze(0)), dim=0)
 
-        pe = pe.unsqueeze(0).transpose(0, 1)
-
-        self.pe = pe
+        self.pe = pe.unsqueeze(0)
 
     def forward(self, x):
-        x = (x + self.pe[:x.size(0), :])
+        x = x + self.pe[:, :x.shape[1], :].to(x.device)
         x = self.dropout(x)
         return x
     
