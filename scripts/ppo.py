@@ -161,6 +161,11 @@ class ProximalPolicyOptimization():
             value_conf["out_dim"] = 1
             value_conf["max_len"] = self._conf.max_len
             value_net = TransformerEncoderModelEOS(**value_conf, device=self._device)
+        elif self._conf.policy_arch == "DiscreteStateTransformerEncoder":
+            value_conf["src_dim"] = self._conf.state_dim
+            value_conf["out_dim"] = 1
+            value_conf["max_len"] = self._conf.max_len
+            value_net = DiscreteStateTransformerEncoderModelEOS(**value_conf, device=self._device)
         elif self._conf.policy_arch == "Transformer":
             value_conf["src_dim"] = self._conf.state_dim
             value_conf["tgt_dim"] = self._conf.action_dim

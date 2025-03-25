@@ -14,8 +14,8 @@
         "agents": [0]
     },
     "Actor Architecture": {
-        "policy_arch": "SimpleMLP",
-        "value_fn_arch": "SimpleMLP",
+        "policy_arch": "DiscreteStateTransformerEncoder",
+        "value_fn_arch": "DiscreteStateTransformerEncoder",
         "archs_available": [
             {
                 "name": "Transformer",

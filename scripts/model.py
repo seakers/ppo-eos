@@ -605,7 +605,7 @@ class DiscreteStateTransformerEncoderModelEOS(nn.Module):
             is_value_fn: bool = False,
             device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
-        super(TransformerEncoderModelEOS, self).__init__()
+        super(DiscreteStateTransformerEncoderModelEOS, self).__init__()
         self.model_type = "Earth Observation Model"
         self.out_dim = out_dim
         self.is_value_fn = is_value_fn
