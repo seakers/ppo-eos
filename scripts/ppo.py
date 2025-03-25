@@ -21,6 +21,7 @@ from scripts.data import DataCollectorFromEarthGym
 from scripts.model import SimpleMLP
 from scripts.model import MLPModelEOS
 from scripts.model import TransformerEncoderModelEOS
+from scripts.model import DiscreteStateTransformerEncoderModelEOS
 from scripts.model import TransformerModelEOS
 from scripts.client import Client
 from scripts.utils import DataFromJSON
@@ -85,6 +86,9 @@ class ProximalPolicyOptimization():
         # Plot and save the learning progress
         ppo_algo.plot_learning_progress(self._save_path)
 
+        # Plot the losses
+        ppo_algo.plot_losses(self._save_path)
+
         # Plot time usage
         ppo_algo.plot_time_usage(self._save_path)
 
@@ -114,6 +118,11 @@ class ProximalPolicyOptimization():
             policy_conf["out_dim"] = self._conf.action_dim
             policy_conf["max_len"] = self._conf.max_len
             policy_net = TransformerEncoderModelEOS(**policy_conf, device=self._device)
+        elif self._conf.policy_arch == "DiscreteStateTransformerEncoder":
+            policy_conf["src_dim"] = self._conf.state_dim
+            policy_conf["out_dim"] = self._conf.action_dim
+            policy_conf["max_len"] = self._conf.max_len
+            policy_net = DiscreteStateTransformerEncoderModelEOS(**policy_conf, device=self._device)
         elif self._conf.policy_arch == "Transformer":
             policy_conf["src_dim"] = self._conf.state_dim
             policy_conf["tgt_dim"] = self._conf.action_dim
@@ -217,7 +226,7 @@ class PPOAlgorithm():
             module=self._policy,
             in_keys=["policy_observation"] if self._conf.policy_arch != "Transformer" else ["policy_observation", "actions_as_tgt"],
             out_keys=["loc", "scale"]
-        )
+        ).to(self._device)
 
         self._actor = ProbabilisticActor(
             module=policy_td_module,
@@ -228,19 +237,19 @@ class PPOAlgorithm():
                 "high": torch.tensor([1., 1.]), # e.g. tensor([1., 1., 1.])
             },
             return_log_prob=True
-        )
+        ).to(self._device)
 
         self._value_module = ValueOperator(
             module=self._value_fn,
             in_keys=["value_fn_observation"] if self._conf.value_fn_arch != "Transformer" else ["value_fn_observation", "actions_as_tgt"]
-        )
+        ).to(self._device)
 
         self._advantage_module = GAE(
             gamma=self._gamma,
             lmbda=self._lmbda,
             value_network=self._value_module,
             average_gae=True
-        )
+        ).to(self._device)
 
         self._replay_buffer = ReplayBuffer(
             storage=LazyTensorStorage(max_size=self._horizon),
@@ -254,10 +263,10 @@ class PPOAlgorithm():
             entropy_bonus=True,
             critic_coef=self._c1,
             entropy_coef=self._c2
-        )
+        ).to(self._device)
         ########################### PPO Core ###########################  
 
-    def learn(self, total_steps: int = 10000):
+    def learn(self, total_steps: int=10000):
         """
         Learn the policy using PPO. Inspired from the torchrl implementation.
         """
@@ -284,11 +293,14 @@ class PPOAlgorithm():
         self._pbar = tqdm(total=self._total_steps)
         ########################### Tracking ###########################
 
-        eval_str = ""
         self._actor.train()
         for i, tensordict_data in enumerate(self._collector):
             now = datetime.now()
             # We now have a batch of data in tensordict_data
+            objective_losses = []
+            critic_losses = []
+            entropy_losses = []
+
             for _ in range(self._optim_steps):
                 # We'll need an "advantage" signal to make PPO work
                 # Compute GAE at each epoch as its value depends on the updated value function
@@ -310,35 +322,25 @@ class PPOAlgorithm():
                     self._optimizer.step()
                     self._optimizer.zero_grad()
 
+                    # Append loss values
+                    objective_losses.append(loss_vals["loss_objective"].item())
+                    critic_losses.append(loss_vals["loss_critic"].item())
+                    entropy_losses.append(loss_vals["loss_entropy"].item())
+
             self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
-            cum_reward_str = (
-                f"Average reward: {self._logs['reward'][-1]:4f}, "
-            )
-            self._logs["step_count"].append(tensordict_data["next", "step_count"].max().item())
-            stepcount_str = f"Step count (max): {self._logs['step_count'][-1]}, "
+            reward_str = f"Average reward: {self._logs['reward'][-1]:6f}, "
+            # self._logs["step_count"].append(tensordict_data["next", "step_count"].max().item())
+            # stepcount_str = f"Step count: {self._logs['step_count'][-1]}, "
+            self._logs["loss_objective"].append(sum(objective_losses)/len(objective_losses))
+            self._logs["loss_critic"].append(sum(critic_losses)/len(critic_losses))
+            self._logs["loss_entropy"].append(sum(entropy_losses)/len(entropy_losses))
+            losses_str = f"Objective loss: {self._logs['loss_objective'][-1]:.6f}, Critic loss: {self._logs['loss_critic'][-1]:.6f}, Entropy loss: {self._logs['loss_entropy'][-1]:.6f}, "
             self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
-            lr_str = f"Policy lr: {self._logs['lr'][-1]:.6f}"
-
-            ########################### Testing ###########################
-            # if i % 10 == 0 and False:
-            #     rewards, step_count = self.test_one_run()
-            #     self._actor.train()
-            #     self._logs["eval reward (sum)"].append(rewards)
-            #     self._logs["eval step_count"].append(step_count)
-
-            #     self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
-            #     self._logs["step_count"].append(tensordict_data["step_count"].max().item())
-            #     self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
-            #     eval_str = (
-            #         f"Eval cumulative reward: {self._logs['eval reward (sum)'][-1]:4f}, "
-            #         f"Eval step count: {self._logs['eval step_count'][-1]}, "
-            #     )
-            ########################### Testing ###########################
+            lr_str = f"Learning rate: {self._logs['lr'][-1]:.6f}"
             
             # Update the progress bar
             self._pbar.update(tensordict_data.numel())
-            self._pbar.set_description("".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
-            # self._pbar.set_description(f"Current test rewards is {rewards:.4f} and step count is {step_count:.0f}. Learning rate is {last_lr[0]:.6f}")
+            self._pbar.set_description("".join([reward_str, losses_str, lr_str]))
 
             # Update the learning rate
             self._lr_scheduler.step()
@@ -348,14 +350,14 @@ class PPOAlgorithm():
         # Save the logs
         self._pbar.close()
     
-    def test(self, n_steps: int = 10000):
+    def test(self, n_steps: int=10000):
         """
         Run the agent in the environment for a specified number of timesteps.
         """
         print("Testing the model...")
         self._collector.test(n_steps=n_steps)
 
-    def plot_learning_progress(self, path: str = "."):
+    def plot_learning_progress(self, path: str="."):
         """
         Plot the learning progress.
         """
@@ -368,7 +370,28 @@ class PPOAlgorithm():
         plt.savefig(f"{path}/learning_progress.png", dpi=500)
         plt.close()
 
-    def plot_time_usage(self, path: str = "."):
+    def plot_losses(self, path: str="."):
+        """
+        Plot the losses.
+        """
+        # Plot losses
+        losses_df = pd.DataFrame(self._logs["loss_objective"], columns=["Objective"])
+        losses_df["Critic"] = self._logs["loss_critic"]
+        losses_df["Entropy"] = self._logs["loss_entropy"]
+
+        losses_df["Objective"] = losses_df["Objective"].rolling(window=int(len(losses_df["Objective"])/10)).mean()
+        losses_df["Critic"] = losses_df["Critic"].rolling(window=int(len(losses_df["Critic"])/10)).mean()
+        losses_df["Entropy"] = losses_df["Entropy"].rolling(window=int(len(losses_df["Entropy"])/10)).mean()
+
+        plt.plot(losses_df["Objective"], label="Objective")
+        plt.plot(losses_df["Critic"], label="Critic")
+        plt.plot(losses_df["Entropy"], label="Entropy")
+        plt.title("Losses")
+        plt.legend()
+        plt.savefig(f"{path}/losses.png", dpi=500)
+        plt.close()
+
+    def plot_time_usage(self, path: str="."):
         """
         Plot the time usage.
         """

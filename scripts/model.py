@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.init as init
 from tensordict.nn.distributions import NormalParamExtractor
 
+import numpy as np
+
 class SimpleMLP(nn.Module):
     def __init__(
             self,
@@ -74,7 +76,48 @@ class FloatEmbedder(nn.Module):
         x = self.embed(x)
         x = self.dropout(x)
         return x
-    
+
+class DiscreteEmbedder(nn.Module):
+    """
+    Class to embed the discrete (categorical) values of the states and actions. Child class of nn.Module.
+    """
+    def __init__(
+            self,
+            input_dim: int,
+            embed_dim: int,
+            intervals: float,
+            dropout: float
+        ):
+        super(DiscreteEmbedder, self).__init__()
+        self.input_dim = input_dim
+        self.embed_dim = embed_dim
+        self.intervals = intervals
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Number of embeddings
+        self.n_embeddings = self.input_dim * self.intervals
+        
+        self.embed = nn.Embedding(self.n_embeddings, embed_dim)
+
+    def classify_interval_tensor(x: torch.Tensor, num_intervals: int) -> torch.Tensor:
+        # Check that all elements are between 0 and 1
+        if torch.any(x < 0) or torch.any(x > 1):
+            raise ValueError("All elements in x must be between 0 and 1")
+        
+        # Multiply by the number of intervals and take the floor to get the interval index
+        intervals = torch.floor(x * num_intervals).to(torch.int64)
+        
+        # For values equal to 1, the multiplication will yield num_intervals, which are replaced with num_intervals - 1
+        return torch.where(intervals == num_intervals, torch.tensor(num_intervals - 1, device=x.device), intervals)
+
+    def forward(self, x: torch.Tensor):
+        for i in range(x.shape[0]):
+            for j in range(x.shape[1]):
+                x[i, j] = torch.tensor(sum([n * self.intervals**k for k, n in enumerate(self.classify_interval_tensor(x[i, j], self.intervals))]))
+        x = self.embed(x)
+        x = self.dropout(x)
+        return x
+
 class PositionalEncoder(nn.Module):
     """
     Class to encode the position of the states and actions using the Attention Is All You Need functions. Child class of nn.Module.
@@ -300,17 +343,17 @@ class TransformerModelEOS(nn.Module):
         self.is_value_fn = is_value_fn
 
         encoding_segment_size = int(torch.clamp(torch.tensor(d_model // 100), min=2, max=5).item()) # segment size is between 2 and 5
-        embed_dim = d_model - encoding_segment_size
+        embed_dim = d_model - encoding_segment_size if position_encoding == "segment" else d_model
 
         src_embedder = FloatEmbedder(
             input_dim=src_dim,
-            embed_dim=embed_dim if position_encoding == "segment" else d_model,
+            embed_dim=embed_dim,
             dropout=embed_dropout
         )
 
         tgt_embedder = FloatEmbedder(
             input_dim=tgt_dim,
-            embed_dim=embed_dim if position_encoding == "segment" else d_model,
+            embed_dim=embed_dim,
             dropout=embed_dropout
         )
 
@@ -444,11 +487,136 @@ class TransformerEncoderModelEOS(nn.Module):
         self.is_value_fn = is_value_fn
 
         encoding_segment_size = int(torch.clamp(torch.tensor(d_model // 100), min=2, max=5).item()) # segment size is between 2 and 5
-        embed_dim = d_model - encoding_segment_size
+        embed_dim = d_model - encoding_segment_size if position_encoding == "segment" else d_model
 
         src_embedder = FloatEmbedder(
             input_dim=src_dim,
-            embed_dim=embed_dim if position_encoding == "segment" else d_model,
+            embed_dim=embed_dim,
+            dropout=embed_dropout
+        )
+
+        if position_encoding == "sine":
+            pos_encoder = PositionalEncoder(
+                max_len=max_len,
+                d_model=d_model,
+                dropout=pos_dropout
+            )
+        elif position_encoding == "segment":
+            pos_encoder = SegmentPositionalEncoder(
+                max_len=max_len,
+                d_model=d_model,
+                encoding_segment_size=encoding_segment_size,
+                dropout=pos_dropout
+            )
+        else:
+            raise ValueError("The position encoding must be either 'sine' or 'segment'")
+
+        transformer_encoder = EOSTransformerEncoder(
+            d_model=d_model,
+            nhead=nhead,
+            num_encoder_layers=num_encoder_layers,
+            dim_feedforward=dim_feedforward,
+            dropout=encoder_dropout,
+            activation=activation,
+            batch_first=batch_first,
+            kaiming_init=kaiming_init
+        )
+
+        projector = Projector(
+            in_dim=d_model,
+            out_dim=int(2 * out_dim if not is_value_fn else out_dim)
+        )
+
+        self.src_embedder = src_embedder
+        self.pos_encoder = pos_encoder
+        self.transformer_encoder = transformer_encoder
+        self.projector = projector
+        self.gpu_device = device
+        self.npe = NormalParamExtractor() if not is_value_fn else nn.Identity()
+
+        if self.transformer_encoder.architecture_type != "TransformerEncoder":
+            raise ValueError("The model is not a transformer.")
+
+    def forward(self, src: torch.Tensor):
+        with torch.no_grad():            
+            # Check whether they are batched or not
+            while src.dim() < 3:
+                src = src.unsqueeze(0)
+
+        seq_len = src.shape[1]
+
+        # Pass the embedded src through the positional encoder
+        src = self.pos_encoder(self.src_embedder(src))
+
+        # Set the src mask
+        mask = self.transformer_encoder._generate_square_subsequent_mask(seq_len)
+        mask = mask.to(src.device)
+
+        # Pass the input src through the transformer
+        x = self.transformer_encoder(src, mask=mask, is_causal=True)
+
+        # Pass the output through the projector
+        x = self.projector(x)
+
+        # Apply the normal parameter extractor
+        x: torch.Tensor = self.npe(x) # (loc, scale) if not is_value_fn else (value)
+
+        # If while in training mode, return the last sequence only
+        if self.training:
+            if self.is_value_fn:
+                return x[:, -1, :]
+            else:
+                loc, scale = x
+                return loc[:, -1, :], scale[:, -1, :]
+
+        return x
+
+################################################################
+#
+# DISCRETE STATE TRANSFORMER ENCODER ARCHITECTURE. ENCODER ONLY.
+#
+################################################################
+
+class DiscreteStateTransformerEncoderModelEOS(nn.Module):
+    """
+    Class to create the Earth Observation Satellite model. Child class of nn.Module. Parts:
+        · 1. embedder for the src
+        · 2. positional encoder
+        · 3. transformer encoder
+        · 4. stochastic projector
+    """
+    def __init__(
+            self,
+            src_dim: int,
+            out_dim: int,
+            d_model: int,
+            nhead: int,
+            max_len: int,
+            num_encoder_layers: int,
+            dim_feedforward: int,
+            embed_dropout: float,
+            pos_dropout: float,
+            encoder_dropout: float,
+            intervals: float,
+            position_encoding: str,
+            activation: str = "relu",
+            batch_first: bool = True,
+            kaiming_init: bool = False,
+            is_value_fn: bool = False,
+            device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        ):
+        super(TransformerEncoderModelEOS, self).__init__()
+        self.model_type = "Earth Observation Model"
+        self.out_dim = out_dim
+        self.is_value_fn = is_value_fn
+
+        encoding_segment_size = int(torch.clamp(torch.tensor(d_model // 100), min=2, max=5).item()) # segment size is between 2 and 5
+        embed_dim = d_model - encoding_segment_size if position_encoding == "segment" else d_model
+
+        src_embedder = DiscreteEmbedder(
+            input_dim=src_dim,
+            embed_dim=embed_dim,
+            intervals=intervals,
             dropout=embed_dropout
         )
 

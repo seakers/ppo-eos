@@ -5,7 +5,7 @@
         "load_buffer": false
     },
     "Environment": {
-        "state_dim": 20,
+        "state_dim": 8,
         "action_dim": 2,
         "max_len": 10,
         "reward_scale": 1.0,
@@ -41,7 +41,22 @@
                 "embed_dropout": 0.1,
                 "pos_dropout": 0.1,
                 "encoder_dropout": 0.1,
-                "position_encoding": "segment",
+                "position_encoding": "sine",
+                "activation": "relu",
+                "batch_first": true,
+                "kaiming_init": false
+            },
+            {
+                "name": "DiscreteStateTransformerEncoder",
+                "d_model": 512,
+                "nhead": 8,
+                "num_encoder_layers": 1,
+                "dim_feedforward": 2048,
+                "embed_dropout": 0.1,
+                "pos_dropout": 0.1,
+                "encoder_dropout": 0.1,
+                "intervals": 100,
+                "position_encoding": "sine",
                 "activation": "relu",
                 "batch_first": true,
                 "kaiming_init": false
@@ -58,10 +73,10 @@
         ]
     },
     "Proximal Policy Optimization": {
-        "learn_steps": 1.5e5,
+        "learn_steps": 1e6,
         "test_steps": 3e3,
-        "trajectory_len": 300,
-        "horizon": 512,
+        "trajectory_len": 120,
+        "horizon": 1024,
         "minibatch_size": 64,
         "optim_steps": 10,
         "max_grad_norm": 1.0,
