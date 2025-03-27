@@ -262,7 +262,7 @@ class DataCollectorFromEarthGym():
         states = states.clone()
         actions = actions.clone()
 
-        sequential_models = ["Transformer", "TransformerEncoder"]
+        sequential_models = ["Transformer", "TransformerEncoder", "DiscreteStateTransformerEncoder"]
 
         # See if the policy is a sequential model
         if self._conf.policy_arch in sequential_models:
@@ -314,8 +314,8 @@ class DataCollectorFromEarthGym():
             "a": (1/RT, -1), "e": (1, 0), "i": (1/180, 0), "raan": (1/360, 0), "aop": (1/360, 0), "ta": (1/360, 0), # orbital elements
             "az": (1/360, 0), "el": (1/180, 0.5), # azimuth and elevation
             "pitch": (1/180, 0.5), "roll": (1/360, 0.5), # attitude
-            "detic_lat": (1/180, 0.5), "detic_lon": (1/360, 0), "detic_alt": (1/RT, 0), # nadir position
-            "lat": (1/180, 0.5), "lon": (1/360, 0), "priority": (1/10, 0) # targets clues
+            "detic_lat": (1/180, 0.5), "detic_lon": (1/360, 0.5), "detic_alt": (1/RT, 0), # nadir position
+            "lat": (1/180, 0.5), "lon": (1/360, 0.5), "priority": (1/10, 0) # targets clues
         }
 
         vec_state = []
@@ -323,5 +323,8 @@ class DataCollectorFromEarthGym():
             if key.startswith("lat_") or key.startswith("lon_") or key.startswith("priority_"):
                 key = key.split("_")[0]
             vec_state.append(value * conversion_dict[key][0] + conversion_dict[key][1])
+
+        # Check they are all between 0 and 1
+        assert all([0 <= x <= 1 for x in vec_state]), f"State elements ∈ [0, 1] constraint violated: {vec_state}"
 
         return vec_state

@@ -48,12 +48,16 @@ class FloatEmbedder(nn.Module):
             self,
             input_dim: int,
             embed_dim: int,
-            dropout: float
+            dropout: float,
+            discretized: bool = False,
+            tolerance: float = 0.01
         ):
         super(FloatEmbedder, self).__init__()
         self.input_dim = input_dim
         self.embed_dim = embed_dim
         self.dropout = nn.Dropout(p=dropout)
+        self.discretized = discretized
+        self.tolerance = tolerance
         
         layers = []
         layers.append(nn.Linear(input_dim, self.embed_dim // 4))
@@ -73,6 +77,10 @@ class FloatEmbedder(nn.Module):
                 init.zeros_(layer.bias)
 
     def forward(self, x):
+        if self.discretized:
+            # Discretize the input tensor
+            # Since the input tensor is continuous ∈ [0, 1], we'll reduce precision to .01
+            x = torch.round(x / self.tolerance) * self.tolerance
         x = self.embed(x)
         x = self.dropout(x)
         return x
@@ -85,36 +93,53 @@ class DiscreteEmbedder(nn.Module):
             self,
             input_dim: int,
             embed_dim: int,
+            max_len: int,
             intervals: float,
             dropout: float
         ):
         super(DiscreteEmbedder, self).__init__()
         self.input_dim = input_dim
         self.embed_dim = embed_dim
+        self.max_len = max_len
         self.intervals = intervals
         self.dropout = nn.Dropout(p=dropout)
 
         # Number of embeddings
-        self.n_embeddings = self.input_dim * self.intervals
+        self.n_embeddings = self.intervals**self.input_dim
         
         self.embed = nn.Embedding(self.n_embeddings, embed_dim)
 
-    def classify_interval_tensor(x: torch.Tensor, num_intervals: int) -> torch.Tensor:
-        # Check that all elements are between 0 and 1
-        if torch.any(x < 0) or torch.any(x > 1):
-            raise ValueError("All elements in x must be between 0 and 1")
-        
-        # Multiply by the number of intervals and take the floor to get the interval index
-        intervals = torch.floor(x * num_intervals).to(torch.int64)
-        
-        # For values equal to 1, the multiplication will yield num_intervals, which are replaced with num_intervals - 1
-        return torch.where(intervals == num_intervals, torch.tensor(num_intervals - 1, device=x.device), intervals)
+        # Pre-saved powers for the usual case
+        powers = torch.ones((1, self.max_len, self.input_dim), dtype=torch.float32)
+        powers = powers.cumsum(dim=-1) - powers
+        self.pre_saved_powers = self.intervals**powers
 
+    def classify_interval_tensor(self, x: torch.Tensor, num_intervals: int) -> torch.Tensor:
+        intervals = torch.floor(x * num_intervals).to(torch.int64)
+
+        # Create a tensor with the same shape as `intervals`, filled with (num_intervals - 1)
+        correction = torch.full_like(intervals, num_intervals - 1)
+
+        # Replace values equal to num_intervals with num_intervals - 1
+        return torch.where(intervals == num_intervals, correction, intervals)
+    
     def forward(self, x: torch.Tensor):
-        for i in range(x.shape[0]):
-            for j in range(x.shape[1]):
-                x[i, j] = torch.tensor(sum([n * self.intervals**k for k, n in enumerate(self.classify_interval_tensor(x[i, j], self.intervals))]))
-        x = self.embed(x)
+        # Get classified intervals for each vector
+        interval_tensor = self.classify_interval_tensor(x, self.intervals) # shape: (B, T, D)
+
+        if x.shape == (1, self.max_len, self.input_dim):
+            powers = self.pre_saved_powers
+        else:
+            # Arange the last dimension to be 1, 2, 3, 4, ..., D inside powers
+            powers = torch.ones_like(interval_tensor, dtype=torch.float32, device=x.device)
+            powers = powers.cumsum(dim=-1) - powers
+            powers = self.intervals**powers
+
+        # Compute dot product along the last dim to get integers per vector
+        pre_embed = (interval_tensor * powers).sum(dim=-1).to(torch.int64) # shape: (B, T)
+
+        # Embedding lookup and dropout
+        x = self.embed(pre_embed)
         x = self.dropout(x)
         return x
 
@@ -335,6 +360,8 @@ class TransformerModelEOS(nn.Module):
             batch_first: bool = True,
             kaiming_init: bool = False,
             is_value_fn: bool = False,
+            discretized: bool = False,
+            tolerance: float = 0.01,
             device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
         super(TransformerModelEOS, self).__init__()
@@ -348,13 +375,17 @@ class TransformerModelEOS(nn.Module):
         src_embedder = FloatEmbedder(
             input_dim=src_dim,
             embed_dim=embed_dim,
-            dropout=embed_dropout
+            dropout=embed_dropout,
+            discretized=discretized,
+            tolerance=tolerance
         )
 
         tgt_embedder = FloatEmbedder(
             input_dim=tgt_dim,
             embed_dim=embed_dim,
-            dropout=embed_dropout
+            dropout=embed_dropout,
+            discretized=discretized,
+            tolerance=tolerance
         )
 
         if position_encoding == "sine":
@@ -479,6 +510,8 @@ class TransformerEncoderModelEOS(nn.Module):
             batch_first: bool = True,
             kaiming_init: bool = False,
             is_value_fn: bool = False,
+            discretized: bool = False,
+            tolerance: float = 0.01,
             device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
         super(TransformerEncoderModelEOS, self).__init__()
@@ -492,7 +525,9 @@ class TransformerEncoderModelEOS(nn.Module):
         src_embedder = FloatEmbedder(
             input_dim=src_dim,
             embed_dim=embed_dim,
-            dropout=embed_dropout
+            dropout=embed_dropout,
+            discretized=discretized,
+            tolerance=tolerance
         )
 
         if position_encoding == "sine":
@@ -616,6 +651,7 @@ class DiscreteStateTransformerEncoderModelEOS(nn.Module):
         src_embedder = DiscreteEmbedder(
             input_dim=src_dim,
             embed_dim=embed_dim,
+            max_len=max_len,
             intervals=intervals,
             dropout=embed_dropout
         )

@@ -300,20 +300,35 @@ class PPOAlgorithm():
 
         self._actor.train()
         for i, tensordict_data in enumerate(self._collector):
-            now = datetime.now()
+            start_time = datetime.now()
+
             # We now have a batch of data in tensordict_data
             objective_losses = []
             critic_losses = []
             entropy_losses = []
 
+            if self._conf.debug:
+                advantage_times = []
+                loss_times = []
+                backprop_times = []
+
             for _ in range(self._optim_steps):
                 # We'll need an "advantage" signal to make PPO work
                 # Compute GAE at each epoch as its value depends on the updated value function
+                if self._conf.debug:
+                    now = datetime.now()
+
                 self._advantage_module(tensordict_data)
                 data_view = tensordict_data.reshape(-1)
                 self._replay_buffer.extend(data_view.cpu())
 
+                if self._conf.debug:
+                    advantage_times.append((datetime.now() - now).total_seconds())
+
                 for _ in range(self._horizon // self._minibatch_size):
+                    if self._conf.debug:
+                        now = datetime.now()
+
                     minibatch = self._replay_buffer.sample(self._minibatch_size)
                     loss_vals = self._loss_module(minibatch.to(self._device))
                     loss_value: torch.Tensor = (
@@ -322,10 +337,17 @@ class PPOAlgorithm():
                         + loss_vals["loss_entropy"]
                     )
 
+                    if self._conf.debug:
+                        loss_times.append((datetime.now() - now).total_seconds())
+                        now = datetime.now()
+
                     loss_value.backward()
                     torch.nn.utils.clip_grad_norm_(self._loss_module.parameters(), self._max_grad)
                     self._optimizer.step()
                     self._optimizer.zero_grad()
+
+                    if self._conf.debug:
+                        backprop_times.append((datetime.now() - now).total_seconds())
 
                     # Append loss values
                     objective_losses.append(loss_vals["loss_objective"].item())
@@ -350,7 +372,14 @@ class PPOAlgorithm():
             # Update the learning rate
             self._lr_scheduler.step()
 
-            self._logs["time"].append((datetime.now() - now).total_seconds())
+            self._logs["time"].append((datetime.now() - start_time).total_seconds())
+
+            if self._conf.debug:
+                print()
+                print(f"""Cumulative time taken for optimization: {self._logs['time'][-1]:.4f}
+    - Advantage: {sum(advantage_times):.4f}s
+    - Optim: {sum(loss_times):.4f}s
+    - Backprop: {sum(backprop_times):.4f}s""")
 
         # Save the logs
         self._pbar.close()
