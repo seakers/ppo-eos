@@ -34,15 +34,6 @@ if __name__ == "__main__":
             # Start tracing memory allocations
             tracemalloc.start()
 
-        # Check if CUDA is available
-        print("CUDA available:", torch.cuda.is_available())
-
-        # Check the GPU name
-        if torch.cuda.is_available():
-            print("GPU:", torch.cuda.get_device_name(0))
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         # Create agent
         client = Client(gym_host=args.host, gym_port=args.port)
 
@@ -52,6 +43,16 @@ if __name__ == "__main__":
 
         # Create configuration object
         conf = DataFromJSON(config, "configuration")
+
+        # Check if CUDA is available
+        print("CUDA available:", torch.cuda.is_available())
+
+        # Check the GPU name
+        if torch.cuda.is_available():
+            print("GPU:", torch.cuda.get_device_name(0))
+
+        device = torch.device("cuda" if torch.cuda.is_available() and conf.with_cuda else "cpu")
+        print(f"Device used: {device}")
 
         # Create the Proximal Policy Optimization (PPO) object
         ppo = ProximalPolicyOptimization(

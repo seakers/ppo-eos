@@ -129,8 +129,7 @@ class DataCollectorFromEarthGym():
                 _next_truncated.append(truncated)
 
                 if self._step_count >= self._conf.trajectory_len:
-                    self._step_count = 0
-                    self._traj_id += 1
+                    self.switch_trajectory()
                 else:
                     self._step_count += 1
 
@@ -192,6 +191,13 @@ class DataCollectorFromEarthGym():
 
         # Make max_len dummy moves to have a long enough observation
         self.n_dummy_moves(n=self._conf.max_len)
+
+    def switch_trajectory(self):
+        """
+        Start a new trajectory.
+        """
+        self._traj_id += 1
+        self._step_count = 0
 
     def n_dummy_moves(self, n: int):
         """
@@ -303,7 +309,7 @@ class DataCollectorFromEarthGym():
 
             total_rewards.append(reward.detach().item())
 
-        print(f"Average rewards per step: {sum(total_rewards)/n_steps:.4f}")
+        return sum(total_rewards)/n_steps
         
     def normalize_state(self, state: dict) -> list:
         """

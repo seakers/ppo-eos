@@ -77,8 +77,12 @@ class ProximalPolicyOptimization():
         # Start the PPO algorithm
         ppo_algo.learn(self._conf.learn_steps)
 
+        print("Learning process completed. Doing final tests...")
+
         # Test the model
-        ppo_algo.test(self._conf.test_steps)
+        avg_reward = ppo_algo.test(self._conf.test_steps)
+
+        print(f"Average reward over {self._conf.test_steps} test steps: {avg_reward}")
 
         # Save the model
         ppo_algo.save_models(self._save_path)
@@ -231,30 +235,31 @@ class PPOAlgorithm():
             module=self._policy,
             in_keys=["policy_observation"] if self._conf.policy_arch != "Transformer" else ["policy_observation", "actions_as_tgt"],
             out_keys=["loc", "scale"]
-        ).to(self._device)
+        )
 
         self._actor = ProbabilisticActor(
             module=policy_td_module,
             in_keys=["loc", "scale"],
             distribution_class=TanhNormal,
             distribution_kwargs={
-                "low": torch.tensor([-1., -1.]), # e.g. tensor([-1., -1., -1.])
-                "high": torch.tensor([1., 1.]), # e.g. tensor([1., 1., 1.])
+                "low": torch.tensor([-1., -1.], device=self._device), # e.g. tensor([-1., -1., -1.])
+                "high": torch.tensor([1., 1.], device=self._device), # e.g. tensor([1., 1., 1.])
             },
             return_log_prob=True
-        ).to(self._device)
+        )
 
         self._value_module = ValueOperator(
             module=self._value_fn,
             in_keys=["value_fn_observation"] if self._conf.value_fn_arch != "Transformer" else ["value_fn_observation", "actions_as_tgt"]
-        ).to(self._device)
+        )
 
         self._advantage_module = GAE(
             gamma=self._gamma,
             lmbda=self._lmbda,
             value_network=self._value_module,
-            average_gae=True
-        ).to(self._device)
+            average_gae=True,
+            device=self._device
+        )
 
         self._replay_buffer = ReplayBuffer(
             storage=LazyTensorStorage(max_size=self._horizon),
@@ -268,7 +273,7 @@ class PPOAlgorithm():
             entropy_bonus=True,
             critic_coef=self._c1,
             entropy_coef=self._c2
-        ).to(self._device)
+        )
         ########################### PPO Core ###########################  
 
     def learn(self, total_steps: int=10000):
@@ -354,14 +359,20 @@ class PPOAlgorithm():
                     critic_losses.append(loss_vals["loss_critic"].item())
                     entropy_losses.append(loss_vals["loss_entropy"].item())
 
+            ########################### Testing ###########################
+            if i % 10 == 0:
+                # Test the model
+                avg_reward = self.test(n_steps=100)
+                self._collector.switch_trajectory()
+                self._logs["test reward"].append(avg_reward)
+            ########################### Testing ###########################
+
             self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
-            reward_str = f"Average reward: {self._logs['reward'][-1]:6f}, "
-            # self._logs["step_count"].append(tensordict_data["next", "step_count"].max().item())
-            # stepcount_str = f"Step count: {self._logs['step_count'][-1]}, "
+            reward_str = f"Avg rewards = (test: {self._logs['test reward'][-1]:6f} | train: {self._logs['reward'][-1]:6f}), "
             self._logs["loss_objective"].append(sum(objective_losses)/len(objective_losses))
             self._logs["loss_critic"].append(sum(critic_losses)/len(critic_losses))
             self._logs["loss_entropy"].append(sum(entropy_losses)/len(entropy_losses))
-            losses_str = f"Objective loss: {self._logs['loss_objective'][-1]:.6f}, Critic loss: {self._logs['loss_critic'][-1]:.6f}, Entropy loss: {self._logs['loss_entropy'][-1]:.6f}, "
+            losses_str = f"Losses = (objective: {self._logs['loss_objective'][-1]:.6f} | critic: {self._logs['loss_critic'][-1]:.6f} | entropy: {self._logs['loss_entropy'][-1]:.6f}), "
             self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
             lr_str = f"Learning rate: {self._logs['lr'][-1]:.6f}"
             
@@ -388,8 +399,7 @@ class PPOAlgorithm():
         """
         Run the agent in the environment for a specified number of timesteps.
         """
-        print("Testing the model...")
-        self._collector.test(n_steps=n_steps)
+        return self._collector.test(n_steps=n_steps)
 
     def plot_learning_progress(self, path: str="."):
         """
@@ -401,7 +411,19 @@ class PPOAlgorithm():
 
         plt.plot(rewards_df["Reward (smoothed)"])
         plt.title("Training rewards (average)")
+        plt.xlabel("Steps")
+        plt.ylabel("Reward")
         plt.savefig(f"{path}/learning_progress.png", dpi=500)
+        plt.close()
+
+        rewards_df = pd.DataFrame(self._logs["test reward"], columns=["Reward"])
+        rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
+
+        plt.plot(rewards_df["Reward (smoothed)"])
+        plt.title("Training rewards (average)")
+        plt.xlabel("Steps")
+        plt.ylabel("Reward")
+        plt.savefig(f"{path}/testing_progress.png", dpi=500)
         plt.close()
 
     def plot_losses(self, path: str="."):

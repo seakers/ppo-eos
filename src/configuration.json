@@ -2,7 +2,8 @@
     "General": {
         "debug": false,
         "load_params": false,
-        "load_buffer": false
+        "load_buffer": false,
+        "with_cuda": false
     },
     "Environment": {
         "state_dim": 6,
