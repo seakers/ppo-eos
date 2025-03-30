@@ -69,7 +69,7 @@ class ProximalPolicyOptimization():
             lmbda=self._conf.gae_lambda,
             c1=self._conf.v_loss_coef,
             c2=self._conf.entropy_coef,
-            lr_sched=self._conf.lr_sched,
+            lr_sched=self._conf.lr_schedule,
             lr_min=self._conf.lr_min,
             device=self._device
         )
