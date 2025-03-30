@@ -69,6 +69,8 @@ class ProximalPolicyOptimization():
             lmbda=self._conf.gae_lambda,
             c1=self._conf.v_loss_coef,
             c2=self._conf.entropy_coef,
+            lr_sched=self._conf.lr_sched,
+            lr_min=self._conf.lr_min,
             device=self._device
         )
 
@@ -201,7 +203,7 @@ class PPOAlgorithm():
             c1: float = 1.0,
             c2: float = 0.01,
             lr: float = 3e-4,
-            lr_sched: bool = True,
+            lr_sched: bool = False,
             lr_min: float = 0.0,
             device: torch.device = torch.device("cpu")
         ):
@@ -257,8 +259,7 @@ class PPOAlgorithm():
             gamma=self._gamma,
             lmbda=self._lmbda,
             value_network=self._value_module,
-            average_gae=True,
-            device=self._device
+            average_gae=True
         )
 
         self._replay_buffer = ReplayBuffer(
@@ -323,9 +324,8 @@ class PPOAlgorithm():
                 if self._conf.debug:
                     now = datetime.now()
 
-                self._advantage_module(tensordict_data)
-                data_view = tensordict_data.reshape(-1)
-                self._replay_buffer.extend(data_view.cpu())
+                self._advantage_module(tensordict_data.to(self._device))
+                self._replay_buffer.extend(tensordict_data.cpu())
 
                 if self._conf.debug:
                     advantage_times.append((datetime.now() - now).total_seconds())

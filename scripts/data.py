@@ -74,7 +74,7 @@ class DataCollectorFromEarthGym():
 
         if self._current_step < self._total_steps:
             for _ in range(self._batch_steps):
-                with set_exploration_type(ExplorationType.RANDOM):
+                with set_exploration_type(ExplorationType.RANDOM), torch.no_grad():
                     observation, _ = self.prettify_observation(self._states, self._actions)
                     actions_as_tgt = self._actions.clone()
                     loc, scale, action, log_prob = self._policy(observation) if self._conf.policy_arch != "Transformer" else self._policy(observation, actions_as_tgt)
@@ -136,31 +136,31 @@ class DataCollectorFromEarthGym():
                 self._current_step += 1
 
             return TensorDict({
-                "action": torch.stack(_action, dim=0).clone().detach().to(self._device),
-                "actions_as_tgt": torch.stack(_actions_as_tgt, dim=0).clone().detach().to(self._device),
-                "done": torch.tensor(_done, device=self._device),
-                "loc": torch.stack(_loc, dim=0).clone().detach().to(self._device),
-                "policy_observation": torch.stack(_policy_observation, dim=0).clone().detach().to(self._device),
-                "value_fn_observation": torch.stack(_value_fn_observation, dim=0).clone().detach().to(self._device),
-                "sample_log_prob": torch.stack(_sample_log_prob, dim=0).clone().detach().to(self._device),
-                "scale": torch.stack(_scale, dim=0).clone().detach().to(self._device),
-                "step_count": torch.tensor(_step_count, device=self._device),
-                "terminated": torch.tensor(_terminated, device=self._device),
-                "truncated": torch.tensor(_truncated, device=self._device),
+                "action": torch.stack(_action, dim=0).clone().detach(),
+                "actions_as_tgt": torch.stack(_actions_as_tgt, dim=0).clone().detach(),
+                "done": torch.tensor(_done),
+                "loc": torch.stack(_loc, dim=0).clone().detach(),
+                "policy_observation": torch.stack(_policy_observation, dim=0).clone().detach(),
+                "value_fn_observation": torch.stack(_value_fn_observation, dim=0).clone().detach(),
+                "sample_log_prob": torch.stack(_sample_log_prob, dim=0).clone().detach().reshape(-1),
+                "scale": torch.stack(_scale, dim=0).clone().detach(),
+                "step_count": torch.tensor(_step_count),
+                "terminated": torch.tensor(_terminated),
+                "truncated": torch.tensor(_truncated),
                 
                 "collector": TensorDict({
-                    "traj_ids": torch.tensor(_collector_traj_id, device=self._device)
+                    "traj_ids": torch.tensor(_collector_traj_id)
                 }, batch_size=self._batch_steps),
 
                 "next": TensorDict({
-                    "actions_as_tgt": torch.stack(_actions_as_tgt, dim=0).clone().detach().to(self._device),
-                    "done": torch.tensor(_next_done, device=self._device),
-                    "policy_observation": torch.stack(_next_policy_observation, dim=0).clone().detach().to(self._device),
-                    "value_fn_observation": torch.stack(_next_value_fn_observation, dim=0).clone().detach().to(self._device),
-                    "reward": torch.stack(_next_reward, dim=0).clone().detach().to(self._device),
-                    "step_count": torch.tensor(_next_step_count, device=self._device),
-                    "terminated": torch.tensor(_next_terminated, device=self._device),
-                    "truncated": torch.tensor(_next_truncated, device=self._device),
+                    "actions_as_tgt": torch.stack(_actions_as_tgt, dim=0).clone().detach(),
+                    "done": torch.tensor(_next_done),
+                    "policy_observation": torch.stack(_next_policy_observation, dim=0).clone().detach(),
+                    "value_fn_observation": torch.stack(_next_value_fn_observation, dim=0).clone().detach(),
+                    "reward": torch.stack(_next_reward, dim=0).clone().detach(),
+                    "step_count": torch.tensor(_next_step_count),
+                    "terminated": torch.tensor(_next_terminated),
+                    "truncated": torch.tensor(_next_truncated),
                 }, batch_size=self._batch_steps),
             }, batch_size=self._batch_steps)
         else:
