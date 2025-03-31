@@ -79,15 +79,16 @@ class ProximalPolicyOptimization():
         # Start the PPO algorithm
         ppo_algo.learn(self._conf.learn_steps)
 
+        # Save the model
+        ppo_algo.save_models(self._save_path)
+
         print("Learning process completed. Doing final tests...")
 
         # Test the model
-        avg_reward = ppo_algo.test(self._conf.test_steps)
+        test_rewards = ppo_algo.test(self._conf.test_steps)
+        ppo_algo._logs["unaveraged final test reward"].extend(test_rewards)
 
-        print(f"Average reward over {self._conf.test_steps} test steps: {avg_reward}")
-
-        # Save the model
-        ppo_algo.save_models(self._save_path)
+        print(f"Average reward over {self._conf.test_steps} test steps: {sum(test_rewards)/len(test_rewards)}")
 
         # Plot and save the learning progress
         ppo_algo.plot_learning_progress(self._save_path)
@@ -138,6 +139,10 @@ class ProximalPolicyOptimization():
         else:
             raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
 
+        if self._conf.load_params and os.path.exists(self._save_path + "/policy.pt"):
+            policy_net.load_state_dict(torch.load(self._save_path + "/policy.pt"))
+            print("Loaded the policy network.")
+
         return policy_net.to(self._device)
     
     def build_value_net(self):
@@ -180,6 +185,10 @@ class ProximalPolicyOptimization():
             value_net = TransformerModelEOS(**value_conf, device=self._device)
         else:
             raise ValueError(f"Value architecture {self._conf.value_fn_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
+
+        if self._conf.load_params and os.path.exists(self._save_path + "/value_fn.pt"):
+            value_net.load_state_dict(torch.load(self._save_path + "/value_fn.pt"))
+            print("Loaded the value function network.")
 
         return value_net.to(self._device)
 
@@ -362,11 +371,13 @@ class PPOAlgorithm():
             ########################### Testing ###########################
             if i % 10 == 0:
                 # Test the model
-                avg_reward = self.test(n_steps=100)
+                test_rewards = self.test(n_steps=100)
                 self._collector.switch_trajectory()
-                self._logs["test reward"].append(avg_reward)
+                self._logs["unaveraged test reward"].extend(test_rewards)
+                self._logs["test reward"].append(sum(test_rewards)/len(test_rewards))
             ########################### Testing ###########################
 
+            # self._logs["unaveraged reward"].append(tensordict_data["next", "reward"])
             self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
             reward_str = f"Avg rewards = (test: {self._logs['test reward'][-1]:6f} | train: {self._logs['reward'][-1]:6f}), "
             self._logs["loss_objective"].append(sum(objective_losses)/len(objective_losses))
@@ -405,22 +416,26 @@ class PPOAlgorithm():
         """
         Plot the learning progress.
         """
-        # Plot rewards smoothed and with shaded error
+        # Plot training rewards smoothed
         rewards_df = pd.DataFrame(self._logs["reward"], columns=["Reward"])
         rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
 
         plt.plot(rewards_df["Reward (smoothed)"])
         plt.title("Training rewards (average)")
-        plt.xlabel("Steps")
+        plt.xlabel(f"Experience batches ({self._horizon} steps each)")
         plt.ylabel("Reward")
-        plt.savefig(f"{path}/learning_progress.png", dpi=500)
+        plt.savefig(f"{path}/training_progress.png", dpi=500)
         plt.close()
 
-        rewards_df = pd.DataFrame(self._logs["test reward"], columns=["Reward"])
+        # Plot testing rewards smoothed
+        learning_test_size = len(self._logs["unaveraged test reward"])
+        self._logs["unaveraged test reward"].extend(self._logs["unaveraged final test reward"])
+        rewards_df = pd.DataFrame(self._logs["unaveraged test reward"], columns=["Reward"])
         rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
 
         plt.plot(rewards_df["Reward (smoothed)"])
-        plt.title("Training rewards (average)")
+        plt.axvline(x=learning_test_size, color="red", linestyle="--", linewidth=1)
+        plt.title("Testing rewards (average)")
         plt.xlabel("Steps")
         plt.ylabel("Reward")
         plt.savefig(f"{path}/testing_progress.png", dpi=500)

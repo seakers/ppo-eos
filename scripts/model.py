@@ -469,15 +469,12 @@ class TransformerModelEOS(nn.Module):
         # Apply the normal parameter extractor
         x = self.npe(x) # (loc, scale) if not is_value_fn else (value)
 
-        # If while in training mode, return the last sequence only
-        if self.training:
-            if self.is_value_fn:
-                return x[:, -1, :]
-            else:
-                loc, scale = x
-                return loc[:, -1, :], scale[:, -1, :]
-
-        return x
+        # Return the last sequence only
+        if self.is_value_fn:
+            return x[:, -1, :]
+        else:
+            loc, scale = x
+            return loc[:, -1, :], scale[:, -1, :]
 
 #################################################
 #
@@ -596,15 +593,12 @@ class TransformerEncoderModelEOS(nn.Module):
         # Apply the normal parameter extractor
         x: torch.Tensor = self.npe(x) # (loc, scale) if not is_value_fn else (value)
 
-        # If while in training mode, return the last sequence only
-        if self.training:
-            if self.is_value_fn:
-                return x[:, -1, :]
-            else:
-                loc, scale = x
-                return loc[:, -1, :], scale[:, -1, :]
-
-        return x
+        # Return the last sequence only
+        if self.is_value_fn:
+            return x[:, -1, :]
+        else:
+            loc, scale = x
+            return loc[:, -1, :], scale[:, -1, :]
 
 ################################################################
 #
@@ -722,15 +716,12 @@ class DiscreteStateTransformerEncoderModelEOS(nn.Module):
         # Apply the normal parameter extractor
         x: torch.Tensor = self.npe(x) # (loc, scale) if not is_value_fn else (value)
 
-        # If while in training mode, return the last sequence only
-        if self.training:
-            if self.is_value_fn:
-                return x[:, -1, :]
-            else:
-                loc, scale = x
-                return loc[:, -1, :], scale[:, -1, :]
-
-        return x
+        # Return the last sequence only
+        if self.is_value_fn:
+            return x[:, -1, :]
+        else:
+            loc, scale = x
+            return loc[:, -1, :], scale[:, -1, :]
 
 #########################################################
 #

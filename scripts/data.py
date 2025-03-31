@@ -303,13 +303,12 @@ class DataCollectorFromEarthGym():
                 curr_policy_obs, curr_value_fn_obs, next_policy_obs, next_value_fn_obs, reward, done = self.move_once(action)
 
             if done:
-                n_steps = i + 1
                 total_rewards.append(reward.detach().item())
                 break
 
             total_rewards.append(reward.detach().item())
 
-        return sum(total_rewards)/n_steps
+        return total_rewards
         
     def normalize_state(self, state: dict) -> list:
         """

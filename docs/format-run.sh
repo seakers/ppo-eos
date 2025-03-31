@@ -17,3 +17,6 @@ $PYTHON -u $FILE \
     --save $WORKSPACE/output \
     --pro 0 \
     2>&1 | tee >(tail -n 1000 > $PRINT)
+
+echo "Entire configuration file below:" >> $PRINT
+cat $WORKSPACE/src/configuration.json >> $PRINT
