@@ -428,6 +428,18 @@ class PPOAlgorithm():
         plt.close()
 
         # Plot testing rewards smoothed
+        rewards_df = pd.DataFrame(self._logs["test reward"], columns=["Reward"])
+        rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
+
+        plt.plot(rewards_df["Reward (smoothed)"])
+        plt.axvline(x=learning_test_size, color="red", linestyle="--", linewidth=1)
+        plt.title("Testing rewards (average)")
+        plt.xlabel("Steps")
+        plt.ylabel("Reward")
+        plt.savefig(f"{path}/testing_progress_exact.png", dpi=500)
+        plt.close()
+
+        # Plot testing rewards smoothed
         learning_test_size = len(self._logs["unaveraged test reward"])
         self._logs["unaveraged test reward"].extend(self._logs["unaveraged final test reward"])
         rewards_df = pd.DataFrame(self._logs["unaveraged test reward"], columns=["Reward"])
