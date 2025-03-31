@@ -140,7 +140,7 @@ class ProximalPolicyOptimization():
             raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
 
         if self._conf.load_params and os.path.exists(self._save_path + "/policy.pt"):
-            policy_net.load_state_dict(torch.load(self._save_path + "/policy.pt"))
+            policy_net.load_state_dict(torch.load(self._save_path + "/policy.pt", weights_only=True))
             print("Loaded the policy network.")
 
         return policy_net.to(self._device)
@@ -187,7 +187,7 @@ class ProximalPolicyOptimization():
             raise ValueError(f"Value architecture {self._conf.value_fn_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
 
         if self._conf.load_params and os.path.exists(self._save_path + "/value_fn.pt"):
-            value_net.load_state_dict(torch.load(self._save_path + "/value_fn.pt"))
+            value_net.load_state_dict(torch.load(self._save_path + "/value_fn.pt", weights_only=True))
             print("Loaded the value function network.")
 
         return value_net.to(self._device)
