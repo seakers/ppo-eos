@@ -74,6 +74,11 @@ class ProximalPolicyOptimization():
             device=self._device
         )
 
+        # Load the parameters if needed
+        if self._conf.load_params and os.path.exists(self._save_path + "/policy.pt"):
+            ppo_algo.load_params(self._save_path)
+            print("Loaded the policy, actor, value function and value operator.")
+
         print("Starting the learning process...")
 
         # Start the PPO algorithm
@@ -82,11 +87,10 @@ class ProximalPolicyOptimization():
         # Save the model
         ppo_algo.save_models(self._save_path)
 
-        print("Learning process completed. Doing final tests...")
+        print("Learning process completed and models saved. Starting final tests...")
 
         # Test the model
         test_rewards = ppo_algo.test(self._conf.test_steps)
-        ppo_algo._logs["unaveraged final test reward"].extend(test_rewards)
 
         print(f"Average reward over {self._conf.test_steps} test steps: {sum(test_rewards)/len(test_rewards)}")
 
@@ -139,10 +143,6 @@ class ProximalPolicyOptimization():
         else:
             raise ValueError(f"Policy architecture {self._conf.policy_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
 
-        if self._conf.load_params and os.path.exists(self._save_path + "/policy.pt"):
-            policy_net.load_state_dict(torch.load(self._save_path + "/policy.pt", weights_only=True))
-            print("Loaded the policy network.")
-
         return policy_net.to(self._device)
     
     def build_value_net(self):
@@ -185,10 +185,6 @@ class ProximalPolicyOptimization():
             value_net = TransformerModelEOS(**value_conf, device=self._device)
         else:
             raise ValueError(f"Value architecture {self._conf.value_fn_arch} not available. Please choose from {[i['name'] for i in self._conf.archs_available]}.")
-
-        if self._conf.load_params and os.path.exists(self._save_path + "/value_fn.pt"):
-            value_net.load_state_dict(torch.load(self._save_path + "/value_fn.pt", weights_only=True))
-            print("Loaded the value function network.")
 
         return value_net.to(self._device)
 
@@ -373,11 +369,10 @@ class PPOAlgorithm():
                 # Test the model
                 test_rewards = self.test(n_steps=self._horizon)
                 self._collector.switch_trajectory()
-                self._logs["unaveraged test reward"].extend(test_rewards)
                 self._logs["test reward"].append(sum(test_rewards)/len(test_rewards))
             ########################### Testing ###########################
 
-            # self._logs["unaveraged reward"].append(tensordict_data["next", "reward"])
+            # Append the logs
             self._logs["reward"].append(tensordict_data["next", "reward"].mean().item())
             reward_str = f"Avg rewards = (test: {self._logs['test reward'][-1]:6f} | train: {self._logs['reward'][-1]:6f}), "
             self._logs["loss_objective"].append(sum(objective_losses)/len(objective_losses))
@@ -421,7 +416,7 @@ class PPOAlgorithm():
         rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
 
         plt.plot(rewards_df["Reward (smoothed)"])
-        plt.title("Training rewards (average)")
+        plt.title("Training rewards (smoothed)")
         plt.xlabel(f"Experience batches ({self._horizon} steps each)")
         plt.ylabel("Reward")
         plt.savefig(f"{path}/training_progress.png", dpi=500)
@@ -432,24 +427,10 @@ class PPOAlgorithm():
         rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
 
         plt.plot(rewards_df["Reward (smoothed)"])
-        plt.title("Testing rewards (average of experience batches)")
+        plt.title("Testing rewards (smoothed)")
         plt.xlabel(f"Experience batches ({self._horizon} steps each)")
         plt.ylabel("Reward")
         plt.savefig(f"{path}/testing_progress_exact.png", dpi=500)
-        plt.close()
-
-        # Plot testing rewards smoothed
-        learning_test_size = len(self._logs["unaveraged test reward"])
-        self._logs["unaveraged test reward"].extend(self._logs["unaveraged final test reward"])
-        rewards_df = pd.DataFrame(self._logs["unaveraged test reward"], columns=["Reward"])
-        rewards_df["Reward (smoothed)"] = rewards_df["Reward"].rolling(window=int(len(rewards_df["Reward"])/10)).mean()
-
-        plt.plot(rewards_df["Reward (smoothed)"])
-        plt.axvline(x=learning_test_size, color="red", linestyle="--", linewidth=1)
-        plt.title("Testing rewards (smoothed)")
-        plt.xlabel("Steps")
-        plt.ylabel("Reward")
-        plt.savefig(f"{path}/testing_progress.png", dpi=500)
         plt.close()
 
     def plot_losses(self, path: str="."):
@@ -485,6 +466,20 @@ class PPOAlgorithm():
         plt.title("Time usage per horizon")
         plt.savefig(f"{path}/time_usage.png", dpi=500)
         plt.close()
+
+    def load_params(self, path: str = "."):
+        """
+        Load the following models:
+        - Policy
+        - Probabilistic actor
+        - Value function
+        - Value operator 
+        """
+        # Load the models
+        self._policy.load_state_dict(torch.load(f"{path}/policy.pt", map_location=self._device, weights_only=True))
+        self._actor.load_state_dict(torch.load(f"{path}/prob_actor.pt", map_location=self._device, weights_only=True))
+        self._value_fn.load_state_dict(torch.load(f"{path}/value_fn.pt", map_location=self._device, weights_only=True))
+        self._value_module.load_state_dict(torch.load(f"{path}/value_operator.pt", map_location=self._device, weights_only=True))
 
     def save_models(self, path: str = "."):
         """

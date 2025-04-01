@@ -88,6 +88,9 @@ if __name__ == "__main__":
         traceback.print_exc()
 
     finally:
+        # Shutdown the gym
+        ppo._client.shutdown_gym()
+
         if args.pro:
             ###################### Memory allocation ######################
             # Take a snapshot after executing the code
@@ -108,7 +111,3 @@ if __name__ == "__main__":
         process = psutil.Process(os.getpid())
         memory_used = process.memory_info().rss
         print(f"Memory used: {memory_used / (1024 ** 2):.2f} MB")
-
-        # Shutdown the gym
-        ppo._client.shutdown_gym()
-        
