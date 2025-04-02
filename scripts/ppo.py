@@ -5,6 +5,7 @@ import torch.optim
 import os
 import pandas as pd
 from tqdm import tqdm
+from time import sleep
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -492,6 +493,14 @@ class PPOAlgorithm():
         # Make sure the path exists
         if not os.path.exists(path):
             os.makedirs(path)
+
+        # Erase the previous files
+        for file in [f"{path}/policy.pt", f"{path}/prob_actor.pt", f"{path}/value_fn.pt", f"{path}/value_operator.pt"]:
+            if os.path.exists(file):
+                os.remove(file)
+        
+        # Wait for the files to be erased
+        sleep(1)
 
         # Save in .pt files
         torch.save(self._policy.state_dict(), f"{path}/policy.pt")
