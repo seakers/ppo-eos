@@ -229,7 +229,7 @@ class DataCollectorFromEarthGym():
             # Break if time is up
             if done:
                 print("Time is up!")
-                return None, None, True
+                return None, None, None, None, None, True
 
             # Normalize the state
             vec_state = self.normalize_state(state)
