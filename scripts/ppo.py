@@ -381,7 +381,7 @@ class PPOAlgorithm():
             self._logs["loss_entropy"].append(sum(entropy_losses)/len(entropy_losses))
             losses_str = f"Losses = (objective: {self._logs['loss_objective'][-1]:.6f} | critic: {self._logs['loss_critic'][-1]:.6f} | entropy: {self._logs['loss_entropy'][-1]:.6f}), "
             self._logs["lr"].append(self._optimizer.param_groups[0]["lr"])
-            lr_str = f"Learning rate: {self._logs['lr'][-1]:.6f}"
+            lr_str = f"Learning rate: {self._logs['lr'][-1]:.2e}"
             
             # Update the progress bar
             self._pbar.update(tensordict_data.numel())
