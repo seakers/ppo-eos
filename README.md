@@ -6,3 +6,4 @@
 Proximal Policy Optimization algorithm to train Earth Observation Satellites (EOS) agents at [Earth Gym](https://github.com/seakers/earth-gym).
 
 ![Demo](docs/demo.gif)
+*Figure: Orbit visualization generated using ANSYS STK.*
