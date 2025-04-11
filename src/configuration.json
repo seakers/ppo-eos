@@ -6,7 +6,7 @@
         "with_cuda": false
     },
     "Environment": {
-        "state_dim": 6,
+        "state_dim": 20,
         "action_dim": 2,
         "max_len": 10,
         "reward_scale": 1.0,
@@ -15,8 +15,8 @@
         "agents": [0]
     },
     "Actor Architecture": {
-        "policy_arch": "SimpleMLP",
-        "value_fn_arch": "SimpleMLP",
+        "policy_arch": "TransformerEncoder",
+        "value_fn_arch": "TransformerEncoder",
         "archs_available": [
             {
                 "name": "Transformer",
@@ -39,7 +39,7 @@
                 "name": "TransformerEncoder",
                 "d_model": 512,
                 "nhead": 8,
-                "num_encoder_layers": 1,
+                "num_encoder_layers": 6,
                 "dim_feedforward": 2048,
                 "embed_dropout": 0.1,
                 "pos_dropout": 0.1,
@@ -78,7 +78,7 @@
         ]
     },
     "Proximal Policy Optimization": {
-        "learn_steps": 5e5,
+        "learn_steps": 1e6,
         "test_steps": 3e3,
         "trajectory_len": 120,
         "horizon": 1024,
@@ -89,8 +89,8 @@
         "discount": 0.99,
         "gae_lambda": 0.95,
         "v_loss_coef": 1.0,
-        "entropy_coef": 0.001,
-        "lr": 0.0003,
+        "entropy_coef": 0.01,
+        "lr": 3e-6,
         "lr_schedule": true,
         "lr_min": 0.0
     }

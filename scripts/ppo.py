@@ -52,6 +52,12 @@ class ProximalPolicyOptimization():
         # Create the policy model
         policy_net = self.build_policy_net()
 
+        if self._conf.debug:
+            total_params = sum(param.numel() for param in policy_net.parameters())
+            print(f"Total number of parameters in the model: {total_params}")
+            trainable_params = sum(p.numel() for p in policy_net.parameters() if p.requires_grad)
+            print(f"Total number of trainable parameters in the model: {trainable_params}")
+
         # Create the value model
         value_net = self.build_value_net()
 
